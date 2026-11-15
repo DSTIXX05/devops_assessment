@@ -79,7 +79,15 @@ jobs:
         run: docker build -t devops-assessment-app:${{ github.sha }} app/
 
       - name: Trivy scan (fails on HIGH or CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        # Pinned to the commit behind v0.36.0 rather than a tag.
+        # The first attempt used "0.28.0", which does not exist - the action
+        # failed to resolve and the job reported a failure, so the gate looked
+        # like it had run and found something. It had not run at all.
+        #
+        # This action decides what is allowed to deploy, so its own integrity
+        # matters more than for the other actions in this file, which use
+        # major-version tags.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: devops-assessment-app:${{ github.sha }}
           format: table
