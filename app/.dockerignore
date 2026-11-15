@@ -1,0 +1,29 @@
+# Keep the build context small and free of local state.
+node_modules
+npm-debug.log*
+coverage
+.nyc_output
+
+# Version control and CI metadata
+.git
+.gitignore
+.github
+
+# Local environment / secrets - never bake these into an image
+.env
+.env.*
+*.pem
+
+# Infrastructure and documentation are not needed to build the application
+infrastructure
+docs
+*.md
+
+# Editor and OS noise
+.vscode
+.idea
+.DS_Store
+
+# Docker artifacts
+Dockerfile
+.dockerignore

@@ -1,0 +1,20 @@
+{
+  "name": "devops-assessment-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Stateless Node.js / Express API used as the container workload for the deployment assessment",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage"
+  },
+  "dependencies": {
+    "express": "^5.0.0"
+  }
+}

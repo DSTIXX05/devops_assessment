@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars (gitignored) before planning.
+#
+# environment and vpc_cidr have no defaults on purpose: they identify this
+# root, and a silent default is how the wrong environment gets deployed.
+
+aws_region   = "us-east-1"
+project_name = "devops-assessment"
+
+environment = "prod"
+# Non-overlapping with dev (10.20.0.0/16) so the two environments could ever be
+# peered without a CIDR redesign.
+vpc_cidr = "10.30.0.0/16"
+
+# Do not set aws_profile. Credentials come from
+# ../scripts/with-operator-creds.sh; see providers.tf.
+
+extra_tags = {}
