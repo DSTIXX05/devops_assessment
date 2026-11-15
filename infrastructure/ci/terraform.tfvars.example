@@ -1,0 +1,23 @@
+# Copy to terraform.tfvars (gitignored) before planning.
+
+aws_region   = "us-east-1"
+project_name = "devops-assessment"
+
+# These two values form the OIDC sub claim. They must match the repository
+# exactly, including case:
+#   repo:<github_owner>/<github_repository>:ref:refs/heads/<github_branch>
+github_owner      = "DSTIXX05"
+github_repository = "devops_assessment"
+github_branch     = "main"
+
+# Prod trusts a GitHub Environment rather than a branch, so the deploy job must
+# satisfy that environment's protection rules before a token is issued.
+github_prod_environment = "prod"
+
+environments = ["dev", "prod"]
+
+# This account already has a GitHub OIDC provider. Leave false to reference it.
+# Setting this to true in an account without one will create it.
+manage_oidc_provider = false
+
+extra_tags = {}
