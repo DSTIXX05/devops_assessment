@@ -42,6 +42,20 @@ CMD ["npm", "test"]
 # -----------------------------------------------------------------------------
 FROM node:${NODE_VERSION}-alpine AS runtime
 
+# Apply Alpine security updates at build time.
+#
+# The pinned base image ships OS packages older than the current Alpine
+# security fixes: the first real Trivy run found 7 HIGH/CRITICAL findings, all
+# in the base OS and none in our Node dependencies. Without this the security
+# gate blocks deployment on packages the application does not even use.
+#
+# Trade-off, stated deliberately: this makes the image no longer byte-for-byte
+# reproducible, because two builds on different days can resolve different
+# package versions. A stricter alternative is to pin the base image by digest
+# and rebuild on a schedule; that moves the problem rather than solving it, so
+# the upgrade is applied here and the digest pin is left for production.
+RUN apk upgrade --no-cache
+
 # Defaults only. Real values are supplied by the ECS task definition so the same
 # image runs unchanged in every environment.
 ENV NODE_ENV=production \
