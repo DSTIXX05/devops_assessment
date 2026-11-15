@@ -50,8 +50,11 @@ jobs:
       - name: Unit and integration tests
         run: npm test
 
+      # Runs from the job's default working directory (app/), so the build
+      # context and the Dockerfile are the same directory. Overriding the
+      # working directory to the repo root would look for /Dockerfile and fail -
+      # which is exactly what happened on the first run.
       - name: Container test stage builds and passes
-        working-directory: .
         run: docker build --target test -t devops-assessment-app:test .
 
   # ---------------------------------------------------------------------------
