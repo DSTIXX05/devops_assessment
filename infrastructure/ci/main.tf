@@ -18,14 +18,27 @@ locals {
 
   # One entry per environment. The only security-relevant difference between dev
   # and prod is `subject`: a branch for dev, a GitHub Environment for prod.
+  #
+  # The subject uses GitHub's IMMUTABLE format, which includes numeric IDs:
+  #   repo:OWNER@OWNER_ID/REPO@REPO_ID:ref:refs/heads/main
+  #
+  # This is not the format most documentation shows. It was adopted by GitHub to
+  # make the claim immune to repository renames and transfers - an attacker who
+  # gains control of the name cannot produce a token that matches.
+  #
+  # Discovered empirically: the first pipeline run failed with "Not authorized
+  # to perform sts:AssumeRoleWithWebIdentity" because the trust policy expected
+  # repo:OWNER/REPO:ref:... while the token actually carried the @id form.
   deploy_roles = {
     for env in var.environments : env => {
       name_prefix = "${var.project_name}-${env}"
 
+      subject_prefix = "repo:${var.github_owner}@${var.github_owner_id}/${var.github_repository}@${var.github_repo_id}"
+
       subject = (
         env == "prod"
-        ? "repo:${var.github_owner}/${var.github_repository}:environment:${var.github_prod_environment}"
-        : "repo:${var.github_owner}/${var.github_repository}:ref:refs/heads/${var.github_branch}"
+        ? "repo:${var.github_owner}@${var.github_owner_id}/${var.github_repository}@${var.github_repo_id}:environment:${var.github_prod_environment}"
+        : "repo:${var.github_owner}@${var.github_owner_id}/${var.github_repository}@${var.github_repo_id}:ref:refs/heads/${var.github_branch}"
       )
     }
   }

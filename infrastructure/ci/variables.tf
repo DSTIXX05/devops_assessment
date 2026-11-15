@@ -36,6 +36,16 @@ variable "github_repository" {
   type        = string
 }
 
+variable "github_owner_id" {
+  description = "Numeric GitHub account ID of the repository owner. Required for the immutable OIDC subject format (repo:OWNER@ID/REPO@ID:...)."
+  type        = string
+}
+
+variable "github_repo_id" {
+  description = "Numeric GitHub repository ID. Required for the immutable OIDC subject format."
+  type        = string
+}
+
 variable "github_branch" {
   description = "Branch allowed to assume the dev deploy role. Must be the branch the deploy workflow runs from."
   type        = string

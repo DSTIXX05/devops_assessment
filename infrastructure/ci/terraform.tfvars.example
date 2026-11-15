@@ -3,12 +3,20 @@
 aws_region   = "us-east-1"
 project_name = "devops-assessment"
 
-# These two values form the OIDC sub claim. They must match the repository
-# exactly, including case:
-#   repo:<github_owner>/<github_repository>:ref:refs/heads/<github_branch>
+# These values form the OIDC sub claim. The owner/repository IDs are required:
+# GitHub issues immutable subjects that embed numeric IDs, so the claim looks
+# like
+#   repo:<owner>@<owner_id>/<repo>@<repo_id>:ref:refs/heads/<branch>
+# and not the repo:<owner>/<repo>:ref:... form most documentation shows.
+#
+# Read the IDs with:
+#   gh api repos/<owner>/<repo> --jq '.id, .owner.id'
 github_owner      = "DSTIXX05"
 github_repository = "devops_assessment"
 github_branch     = "main"
+
+github_owner_id = "109713333"
+github_repo_id  = "1458162023"
 
 # Prod trusts a GitHub Environment rather than a branch, so the deploy job must
 # satisfy that environment's protection rules before a token is issued.

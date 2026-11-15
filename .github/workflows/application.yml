@@ -173,8 +173,22 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Resolve the deployed revision ARN first.
+          #
+          # Describing by family name authorises against resource "*", which a
+          # scoped policy cannot grant - it produced AccessDeniedException on
+          # DescribeTaskDefinition. A full ARN with a revision authorises against
+          # task-definition/<family>:<revision>, which the policy allows.
+          #
+          # Better semantics too: the new revision derives from what is actually
+          # running, not from whichever revision was registered last.
+          CURRENT_TASK_DEF="$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --query 'services[0].taskDefinition' --output text)"
+
           aws ecs describe-task-definition \
-            --task-definition "$ECS_SERVICE" \
+            --task-definition "$CURRENT_TASK_DEF" \
             --query taskDefinition > task-def.json
 
           # Strip fields that cannot be sent back, replace the image, and update
@@ -319,8 +333,22 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Resolve the deployed revision ARN first.
+          #
+          # Describing by family name authorises against resource "*", which a
+          # scoped policy cannot grant - it produced AccessDeniedException on
+          # DescribeTaskDefinition. A full ARN with a revision authorises against
+          # task-definition/<family>:<revision>, which the policy allows.
+          #
+          # Better semantics too: the new revision derives from what is actually
+          # running, not from whichever revision was registered last.
+          CURRENT_TASK_DEF="$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --query 'services[0].taskDefinition' --output text)"
+
           aws ecs describe-task-definition \
-            --task-definition "$ECS_SERVICE" \
+            --task-definition "$CURRENT_TASK_DEF" \
             --query taskDefinition > task-def.json
 
           jq --arg image "$IMAGE" --arg sha "$GITHUB_SHA" '
