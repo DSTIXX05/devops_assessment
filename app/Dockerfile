@@ -56,6 +56,21 @@ FROM node:${NODE_VERSION}-alpine AS runtime
 # the upgrade is applied here and the digest pin is left for production.
 RUN apk upgrade --no-cache
 
+# Remove the package manager from the runtime image.
+#
+# npm ships its own dependency tree (~17 MB, including tar 7.5.9). None of it
+# can execute here: the container runs `node src/server.js` and installs nothing
+# at runtime. Trivy scans the whole filesystem, so leaving npm in place means
+# shipping - and being blocked by - vulnerable code the application cannot reach.
+#
+# This was previously dismissed as a size optimisation ("17 MB, not worth it").
+# Size was the wrong argument. Attack surface is the right one.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm \
+           /usr/local/bin/npx \
+           /usr/local/bin/corepack
+
 # Defaults only. Real values are supplied by the ECS task definition so the same
 # image runs unchanged in every environment.
 ENV NODE_ENV=production \
