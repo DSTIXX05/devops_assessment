@@ -1,0 +1,20 @@
+# Copy to terraform.tfvars and adjust. terraform.tfvars is gitignored.
+#
+# aws_region is validated to us-east-1 by the module; it is shown here so the
+# pinned decision is visible next to the values an operator is expected to touch.
+aws_region = "us-east-1"
+
+# aws_profile is deliberately omitted.
+# Supply credentials with ../scripts/with-operator-creds.sh, which exports a
+# short-lived session and refuses to run as the account root user. Setting a
+# profile here pins shared-config resolution and can silently attach the wrong
+# identity - see the comment in providers.tf.
+
+project_name = "devops-assessment"
+
+# Monthly notification threshold. Set at or slightly above the expected spend so
+# the first alert is meaningful rather than noise.
+budget_limit_usd = 30
+
+# Optional. Leave empty to create the budget with no email subscriber.
+# budget_notification_email = "you@example.com"
