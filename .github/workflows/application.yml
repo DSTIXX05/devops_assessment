@@ -1,0 +1,373 @@
+name: application
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [dev, prod]
+        required: true
+        default: dev
+
+# Least privilege by default. Only the deploy jobs opt in to id-token: write,
+# which is the permission that lets a job request an OIDC token at all.
+permissions:
+  contents: read
+
+# Never let two deployments overlap. Cancelling in progress would leave ECS
+# mid-rollout, so runs queue instead.
+concurrency:
+  group: application-${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'dev' }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Validation - runs on every pull request and every push.
+  # ---------------------------------------------------------------------------
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: app/.nvmrc
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install from lockfile
+        run: npm ci
+
+      - name: Unit and integration tests
+        run: npm test
+
+      - name: Container test stage builds and passes
+        working-directory: .
+        run: docker build --target test -t devops-assessment-app:test .
+
+  # ---------------------------------------------------------------------------
+  # Blocking vulnerability gate.
+  #
+  # Trivy runs synchronously and fails the build, unlike ECR scan-on-push which
+  # is asynchronous and cannot gate anything.
+  #
+  # ignore-unfixed: true means only findings that have an available fix block the
+  # pipeline. Without it, an unpatched base-image CVE would block every deploy
+  # until the upstream image is rebuilt - a gate that cannot be satisfied is a
+  # gate everyone learns to bypass. The trade-off is explicit.
+  # ---------------------------------------------------------------------------
+  scan:
+    name: trivy
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build runtime image
+        run: docker build -t devops-assessment-app:${{ github.sha }} app/
+
+      - name: Trivy scan (fails on HIGH or CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: devops-assessment-app:${{ github.sha }}
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+
+  # ---------------------------------------------------------------------------
+  # Deploy to dev.
+  #
+  # Deliberately has NO `environment:` key. Declaring a GitHub Environment
+  # changes the OIDC sub claim from
+  #   repo:DSTIXX05/devops_assessment:ref:refs/heads/main
+  # to
+  #   repo:DSTIXX05/devops_assessment:environment:dev
+  # which would not match the dev role's trust policy. Dev is branch-scoped;
+  # prod is environment-scoped. That difference is intentional and is the whole
+  # reason the two jobs are separate rather than one job with a variable.
+  # ---------------------------------------------------------------------------
+  deploy-dev:
+    name: deploy (dev)
+    needs: [test, scan]
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'dev')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+      ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+      ALB_DNS_NAME: ${{ vars.ALB_DNS_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assume deploy role via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-session-name: gha-deploy-dev-${{ github.run_id }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Confirm identity is not root
+        run: |
+          arn="$(aws sts get-caller-identity --query Arn --output text)"
+          echo "assuming: $arn"
+          case "$arn" in
+            *:root) echo "::error::Refusing to deploy as the account root user"; exit 1 ;;
+          esac
+
+      - name: Log in to ECR
+        run: |
+          aws ecr get-login-password --region "$AWS_REGION" \
+            | docker login --username AWS --password-stdin "${ECR_REPOSITORY%%/*}"
+
+      - name: Resolve image reference
+        run: echo "IMAGE=${ECR_REPOSITORY}:${GITHUB_SHA}" >> "$GITHUB_ENV"
+
+      # ECR tags are immutable. On a re-run, pushing an existing tag fails, so
+      # the image is only built when this commit has not been published yet.
+      - name: Check whether this commit is already published
+        id: image
+        run: |
+          if aws ecr describe-images \
+               --repository-name "${ECR_REPOSITORY##*/}" \
+               --image-ids imageTag="$GITHUB_SHA" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push SHA-tagged image
+        if: steps.image.outputs.exists == 'false'
+        run: |
+          docker build -t "$IMAGE" app/
+          docker push "$IMAGE"
+
+      - name: Render and register task definition
+        run: |
+          set -euo pipefail
+
+          aws ecs describe-task-definition \
+            --task-definition "$ECS_SERVICE" \
+            --query taskDefinition > task-def.json
+
+          # Strip fields that cannot be sent back, replace the image, and update
+          # COMMIT_SHA.
+          #
+          # COMMIT_SHA matters: Terraform seeds the task definition with the
+          # value it knew at apply time. If the pipeline only swapped the image,
+          # /api/status would keep reporting the old commit and the traceability
+          # claim would quietly become false.
+          jq --arg image "$IMAGE" --arg sha "$GITHUB_SHA" '
+            del(
+              .taskDefinitionArn, .revision, .status,
+              .requiresAttributes, .compatibilities,
+              .registeredAt, .registeredBy
+            )
+            | .containerDefinitions[0].image = $image
+            | .containerDefinitions[0].environment = (
+                (.containerDefinitions[0].environment // [])
+                | map(if .name == "COMMIT_SHA" then .value = $sha else . end)
+              )
+          ' task-def.json > task-def-next.json
+
+          NEW_ARN="$(aws ecs register-task-definition \
+            --cli-input-json file://task-def-next.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)"
+
+          echo "TASK_DEFINITION=$NEW_ARN" >> "$GITHUB_ENV"
+
+      - name: Update service
+        run: |
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" \
+            --service "$ECS_SERVICE" \
+            --task-definition "$TASK_DEFINITION"
+
+      - name: Wait for service stability
+        run: |
+          aws ecs wait services-stable \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE"
+
+      - name: Verify deployed health endpoint
+        run: |
+          set -euo pipefail
+
+          for attempt in $(seq 1 12); do
+            if curl -fsS --max-time 10 "http://${ALB_DNS_NAME}/health"; then
+              echo
+              echo "health endpoint OK"
+              exit 0
+            fi
+            echo "attempt ${attempt} failed, retrying in 10s"
+            sleep 10
+          done
+
+          echo "::error::Health endpoint did not return 200 through the ALB"
+          exit 1
+
+      - name: Verify running revision matches this commit
+        run: |
+          set -euo pipefail
+          status="$(curl -fsS --max-time 10 "http://${ALB_DNS_NAME}/api/status")"
+          echo "$status"
+          reported="$(echo "$status" | jq -r '.commitSha')"
+          if [ "$reported" != "$GITHUB_SHA" ]; then
+            echo "::error::Deployed commitSha is '$reported', expected '$GITHUB_SHA'"
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Deploy to prod.
+  #
+  # This job declares `environment: prod`, so its OIDC token carries
+  #   repo:DSTIXX05/devops_assessment:environment:prod
+  # which is what the prod role trusts. It also means the job must satisfy the
+  # environment's protection rules (wait timer / reviewers) before it runs.
+  #
+  # Steps are identical to deploy-dev by design; only the environment and the
+  # variables it resolves differ.
+  # ---------------------------------------------------------------------------
+  deploy-prod:
+    name: deploy (prod)
+    needs: [test, scan]
+    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'prod'
+    runs-on: ubuntu-latest
+    environment: prod
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+      ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+      ALB_DNS_NAME: ${{ vars.ALB_DNS_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assume deploy role via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-session-name: gha-deploy-prod-${{ github.run_id }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Confirm identity is not root
+        run: |
+          arn="$(aws sts get-caller-identity --query Arn --output text)"
+          echo "assuming: $arn"
+          case "$arn" in
+            *:root) echo "::error::Refusing to deploy as the account root user"; exit 1 ;;
+          esac
+
+      - name: Log in to ECR
+        run: |
+          aws ecr get-login-password --region "$AWS_REGION" \
+            | docker login --username AWS --password-stdin "${ECR_REPOSITORY%%/*}"
+
+      - name: Resolve image reference
+        run: echo "IMAGE=${ECR_REPOSITORY}:${GITHUB_SHA}" >> "$GITHUB_ENV"
+
+      # ECR tags are immutable. On a re-run, pushing an existing tag fails, so
+      # the image is only built when this commit has not been published yet.
+      - name: Check whether this commit is already published
+        id: image
+        run: |
+          if aws ecr describe-images \
+               --repository-name "${ECR_REPOSITORY##*/}" \
+               --image-ids imageTag="$GITHUB_SHA" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push SHA-tagged image
+        if: steps.image.outputs.exists == 'false'
+        run: |
+          docker build -t "$IMAGE" app/
+          docker push "$IMAGE"
+
+      - name: Render and register task definition
+        run: |
+          set -euo pipefail
+
+          aws ecs describe-task-definition \
+            --task-definition "$ECS_SERVICE" \
+            --query taskDefinition > task-def.json
+
+          jq --arg image "$IMAGE" --arg sha "$GITHUB_SHA" '
+            del(
+              .taskDefinitionArn, .revision, .status,
+              .requiresAttributes, .compatibilities,
+              .registeredAt, .registeredBy
+            )
+            | .containerDefinitions[0].image = $image
+            | .containerDefinitions[0].environment = (
+                (.containerDefinitions[0].environment // [])
+                | map(if .name == "COMMIT_SHA" then .value = $sha else . end)
+              )
+          ' task-def.json > task-def-next.json
+
+          NEW_ARN="$(aws ecs register-task-definition \
+            --cli-input-json file://task-def-next.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)"
+
+          echo "TASK_DEFINITION=$NEW_ARN" >> "$GITHUB_ENV"
+
+      - name: Update service
+        run: |
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" \
+            --service "$ECS_SERVICE" \
+            --task-definition "$TASK_DEFINITION"
+
+      - name: Wait for service stability
+        run: |
+          aws ecs wait services-stable \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE"
+
+      - name: Verify deployed health endpoint
+        run: |
+          set -euo pipefail
+
+          for attempt in $(seq 1 12); do
+            if curl -fsS --max-time 10 "http://${ALB_DNS_NAME}/health"; then
+              echo
+              echo "health endpoint OK"
+              exit 0
+            fi
+            echo "attempt ${attempt} failed, retrying in 10s"
+            sleep 10
+          done
+
+          echo "::error::Health endpoint did not return 200 through the ALB"
+          exit 1
+
+      - name: Verify running revision matches this commit
+        run: |
+          set -euo pipefail
+          status="$(curl -fsS --max-time 10 "http://${ALB_DNS_NAME}/api/status")"
+          echo "$status"
+          reported="$(echo "$status" | jq -r '.commitSha')"
+          if [ "$reported" != "$GITHUB_SHA" ]; then
+            echo "::error::Deployed commitSha is '$reported', expected '$GITHUB_SHA'"
+            exit 1
+          fi

@@ -1,0 +1,63 @@
+name: infrastructure
+
+# Validation only.
+#
+# This workflow deliberately does NOT assume an AWS role and does NOT run
+# `terraform plan` or `terraform apply`. Terraform provisioning is performed by
+# the human operator from their workstation with the admin profile (approved
+# decision 5). Two consequences, stated rather than glossed over:
+#
+#   * CI cannot create or change infrastructure, so it cannot escalate.
+#   * `plan` needs live AWS credentials, so CI cannot show a real plan. It runs
+#     `fmt`, `init -backend=false`, and `validate` - which catch configuration
+#     errors without credentials.
+#
+# A production team would add a read-only plan role. That is a second OIDC role
+# with its own trust policy, and it is out of scope here.
+
+on:
+  pull_request:
+    paths:
+      - "infrastructure/**"
+      - ".github/workflows/infrastructure.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infrastructure/**"
+      - ".github/workflows/infrastructure.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: validate (${{ matrix.root }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        root:
+          - bootstrap
+          - environments/dev
+          - environments/prod
+          - ci
+    defaults:
+      run:
+        working-directory: infrastructure/${{ matrix.root }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          # Matches infrastructure/.terraform-version
+          terraform_version: "1.17.1"
+
+      - name: terraform fmt
+        working-directory: .
+        run: terraform fmt -check -recursive
+
+      - name: terraform init (no backend)
+        run: terraform init -backend=false -input=false
+
+      - name: terraform validate
+        run: terraform validate -no-color
