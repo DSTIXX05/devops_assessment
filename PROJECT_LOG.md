@@ -673,3 +673,102 @@ SNS subscription: `delightsomedunsiasolo24@gmail.com` in
 `PendingConfirmation` — AWS requires the confirmation link to be clicked before
 any alarm notification is delivered. Until then the alarms change state
 correctly but nobody is told.
+
+*(Update, later the same day: the subscription is now **Confirmed** and alarm
+notifications deliver.)*
+
+---
+
+## 2026-11-15 — Phase 7: OIDC, workflows, and the first pipeline deployment
+
+### Outcome
+
+The pipeline deploys dev end to end, with no stored credentials anywhere.
+
+| Evidence | Value |
+| --- | --- |
+| Pipeline commit | `e6c570c534f38aaaf13fc98e7b843e32fd9c7127` |
+| Live `/api/status` → `commitSha` | `e6c570c534f38aaaf13fc98e7b843e32fd9c7127` ✅ |
+| ECS task definition | revision **2**, rollout `COMPLETED`, 1 task running |
+| Chain exercised | OIDC assume → ECR push → register revision → update service → `services-stable` → `/health` 200 → commit match |
+
+### The six defects this phase exposed
+
+Everything below failed *before* a single deployment succeeded. Each is a
+distinct failure mode worth knowing.
+
+**1. `working-directory: .` in the test job.** The job defaults to `app/`; the
+override put Docker at the repo root looking for `/Dockerfile`. My bug.
+
+**2. `trivy-action@0.28.0` does not exist.** The action failed to resolve during
+"Set up job" and the job reported failure in 2 seconds. The scan never ran. A
+security gate that cannot start is *indistinguishable in the summary* from one
+that found something — the worst failure mode a gate has. Pinned to the commit
+behind `v0.36.0`.
+
+**3. Seven HIGH/CRITICAL CVEs in the Alpine base OS.** Real findings. Fixed with
+`apk upgrade --no-cache` (Alpine 3.23.4 → 3.23.8).
+
+**4. `CVE-2026-73566` in `tar` 7.5.9.** Not our dependency — it is bundled inside
+npm at `/usr/local/lib/node_modules/npm`. Fixed by deleting npm, npx and corepack
+from the runtime stage. Earlier in the build this was rejected as a 17 MB size
+optimisation; size was the wrong argument, attack surface was the right one.
+
+**5. OIDC trust could never match.** The trust policy expected
+
+```
+repo:DSTIXX05/devops_assessment:ref:refs/heads/main
+```
+
+The token actually carried
+
+```
+repo:DSTIXX05@109713333/devops_assessment@1458162023:ref:refs/heads/main
+```
+
+GitHub issues **immutable subject claims** containing numeric owner and
+repository IDs, so the claim cannot be forged by renaming or transferring the
+repository. Almost all documentation still shows the older, ID-less form.
+`sts:AssumeRoleWithWebIdentity` returns a bare `Not authorized` with no
+indication of which condition failed.
+
+Diagnosed by adding a throwaway `workflow_dispatch` step that requested a token
+and printed its decoded claims — not by re-reading documentation. The branch was
+deleted afterwards.
+
+**6. `ecs:DescribeTaskDefinition` cannot be resource-scoped.** ECS authorises it
+against `*` regardless of the ARN supplied, so granting only
+`task-definition/<family>:*` produced `AccessDeniedException on resource: *` even
+when the workflow passed a full revision ARN. The deploy role now has exactly
+three `Resource:"*"` statements, all documented: `ecr:GetAuthorizationToken`,
+`ecs:RegisterTaskDefinition`, `ecs:DescribeTaskDefinition`.
+
+### Design details that did hold up
+
+- **`deploy-dev` declares no GitHub Environment.** Adding one would change its
+  subject to `...:environment:dev` and break its trust policy. Dev is
+  branch-scoped; prod is environment-scoped. The asymmetry is deliberate.
+- **The pipeline is also a guard.** A step aborts if `sts get-caller-identity`
+  ends in `:root`, mirroring `with-operator-creds.sh`.
+- **Idempotent image push.** ECR tags are immutable, so an `ecr:DescribeImages`
+  check skips the build when the commit was already published. Without it, a
+  re-run after a transient failure could never succeed.
+- **Task definition rendering updates `COMMIT_SHA`.** Terraform seeds the value;
+  if the pipeline only swapped the image, `/api/status` would keep reporting the
+  old commit and the traceability claim would quietly become false.
+- **Branch ruleset works.** Direct pushes to `main` are rejected with
+  `GH013: Changes must be made through a pull request`. Every change this phase
+  went through a PR, which is why the first attempt to push was refused.
+
+### Key learnings
+
+- Read the token, not the documentation. OIDC claim formats change; a decoded
+  claim is ground truth and takes two minutes to obtain.
+- Not every IAM action supports resource-level permissions. When AWS reports
+  `resource: *` while the policy names an ARN, the action likely ignores ARNs
+  entirely.
+- A CI job that fails during "Set up job" failed before running anything. Check
+  *where* it failed before assuming the check did its job.
+- Duplicated deploy jobs in a workflow are a maintenance trap: the same edit had
+  to be applied twice, twice. A composite action would be the fix if the workflow
+  grows further.
