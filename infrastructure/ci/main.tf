@@ -201,10 +201,24 @@ data "aws_iam_policy_document" "deploy" {
     resources = ["*"]
   }
 
+  # DescribeTaskDefinition does not support resource-level permissions. ECS
+  # authorises the call against "*" no matter what ARN is passed, so scoping it
+  # to task-definition/<family> produced AccessDeniedException - verified by
+  # passing a full revision ARN and still being denied on resource "*".
+  #
+  # This is the third and last Resource:"*" statement the deploy role needs,
+  # alongside ecr:GetAuthorizationToken and ecs:RegisterTaskDefinition.
   statement {
-    sid     = "EcsTaskDefinitionReadAndTag"
+    sid       = "EcsDescribeTaskDefinition"
+    effect    = "Allow"
+    actions   = ["ecs:DescribeTaskDefinition"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid     = "EcsTaskDefinitionTag"
     effect  = "Allow"
-    actions = ["ecs:DescribeTaskDefinition", "ecs:TagResource"]
+    actions = ["ecs:TagResource"]
     resources = [
       local.target_arns[each.key].ecs_taskdef_family,
       local.target_arns[each.key].ecs_taskdef,
