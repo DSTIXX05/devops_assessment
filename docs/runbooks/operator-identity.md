@@ -5,16 +5,16 @@
 two U2F devices), `AdministratorAccess` attached directly. The bootstrap was
 applied with this identity.
 
-**Residual finding:** `aws iam get-account-summary` reports `RootKeys: 1` — the
+**Residual finding:** `aws iam get-account-summary` reports `RootKeys: 1`, the
 account root user still has an active access key. See _Open item_ at the end.
 
 ## Why this matters
 
 The approved architecture states, in two places:
 
-- §9.1 — _"Do not use the account root user for routine work. Protect privileged
+- §9.1, _"Do not use the account root user for routine work. Protect privileged
   human identities with MFA."_
-- §12.2 — _"Do not use root credentials for routine operations."_
+- §12.2, _"Do not use root credentials for routine operations."_
 
 Both `Delightsome` and `delightsome-wordpress` resolve to
 `arn:aws:iam::471112980487:root`. Applying Terraform with either profile would:
@@ -28,7 +28,7 @@ Both `Delightsome` and `delightsome-wordpress` resolve to
 
 Root access keys cannot be restricted. If they leak, the account is lost.
 
-## Step 1 — Enable MFA on the root user (do this first)
+## Step 1 - Enable MFA on the root user (do this first)
 
 Console → account menu → **Security credentials** → _Multi-factor authentication_
 → assign an authenticator app or hardware key.
@@ -37,7 +37,7 @@ Also delete any root **access keys** that exist. The `login_session` entry in
 your CLI config is a console session, not a long-lived key, so removing keys does
 not break it.
 
-## Step 2 — Create a dedicated operator identity
+## Step 2 - Create a dedicated operator identity
 
 One-time use of the root session to create the identity it will be replaced by.
 This is the accepted bootstrap exception: root creates the admin, then root is
@@ -53,9 +53,9 @@ Then **IAM** → **Users** → create `devops-assessment-admin` → add to
 Terraform roots create IAM roles, policies, VPCs, ECS services, and load
 balancers, and a hand-scoped policy would be larger than the code it protects. A
 production setup would use IAM Identity Center permission sets and short-lived
-credentials. Record either choice — do not leave it unstated.
+credentials. Record either choice, do not leave it unstated.
 
-## Step 3 — Authenticate as the new identity
+## Step 3 - Authenticate as the new identity
 
 ```bash
 aws login --profile assessment-admin     # console-session flow
@@ -63,7 +63,7 @@ aws login --profile assessment-admin     # console-session flow
 aws configure --profile assessment-admin
 ```
 
-## Step 4 — Verify before touching Terraform
+## Step 4 - Verify before touching Terraform
 
 ```bash
 aws sts get-caller-identity --profile assessment-admin
@@ -76,7 +76,7 @@ the profile.
 aws configure get region --profile assessment-admin   # expect us-east-1
 ```
 
-## Step 5 — Supply credentials to Terraform
+## Step 5 - Supply credentials to Terraform
 
 Do **not** set `aws_profile` in `terraform.tfvars`, despite the variable still
 existing. An explicit profile makes the AWS provider resolve the CLI's
@@ -92,7 +92,7 @@ It exports short-lived credentials from the named session, leaves `profile` null
 so Terraform uses the environment credential chain, and refuses to run if the
 resolved identity is root. Details in `infrastructure/bootstrap/README.md`.
 
-## Open item — accepted risk, out of scope
+## Open item - accepted risk, out of scope
 
 The root user has an active access key (`RootKeys: 1` in the account summary).
 Root MFA is enabled, but a root access key bypasses MFA entirely and cannot be
@@ -103,7 +103,7 @@ project.** The account is not exclusively used for the assessment, so deleting
 the key carries risk outside the project's control.
 
 Scope of what _is_ closed: no project resource is created or managed by root. The
-`aws_caller_arn` output is the standing evidence —
+`aws_caller_arn` output is the standing evidence,
 `arn:aws:iam::471112980487:user/delightsomeAdmin`.
 
 The README must describe this accurately: the **project's operator path** avoids

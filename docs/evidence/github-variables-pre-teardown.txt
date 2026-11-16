@@ -1,0 +1,17 @@
+]633;E;echo "# GitHub variables captured pre-teardown ($(date -u +%FT%TZ))";73b1ac0b-e5a5-445e-a763-f62e649d922c]633;C# GitHub variables captured pre-teardown (2026-11-16T05:48:42Z)
+
+## Repository-level (used by dev)
+ALB_DNS_NAME	devops-assessment-dev-alb-343497269.us-east-1.elb.amazonaws.com	2026-11-15T18:32:48Z
+AWS_REGION	us-east-1	2026-11-15T18:32:42Z
+AWS_ROLE_ARN	arn:aws:iam::471112980487:role/devops-assessment-dev-github-deploy	2026-11-15T18:32:43Z
+ECR_REPOSITORY	471112980487.dkr.ecr.us-east-1.amazonaws.com/devops-assessment-dev-app	2026-11-15T18:32:44Z
+ECS_CLUSTER	devops-assessment-dev-cluster	2026-11-15T18:32:46Z
+ECS_SERVICE	devops-assessment-dev-app	2026-11-15T18:32:47Z
+
+## Environment prod
+ALB_DNS_NAME = devops-assessment-prod-alb-1683875137.us-east-1.elb.amazonaws.com
+AWS_REGION = us-east-1
+AWS_ROLE_ARN = arn:aws:iam::471112980487:role/devops-assessment-prod-github-deploy
+ECR_REPOSITORY = 471112980487.dkr.ecr.us-east-1.amazonaws.com/devops-assessment-prod-app
+ECS_CLUSTER = devops-assessment-prod-cluster
+ECS_SERVICE = devops-assessment-prod-app
