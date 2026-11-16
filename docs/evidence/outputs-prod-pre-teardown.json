@@ -1,0 +1,132 @@
+{
+  "alarm_names": {
+    "sensitive": false,
+    "type": [
+      "tuple",
+      [
+        "string",
+        "string",
+        "string",
+        "string",
+        "string"
+      ]
+    ],
+    "value": [
+      "devops-assessment-prod-target-5xx",
+      "devops-assessment-prod-unhealthy-hosts",
+      "devops-assessment-prod-live-task-count-low",
+      "devops-assessment-prod-ecs-cpu-high",
+      "devops-assessment-prod-ecs-memory-high"
+    ]
+  },
+  "alarm_topic_arn": {
+    "sensitive": false,
+    "type": "string",
+    "value": "arn:aws:sns:us-east-1:471112980487:devops-assessment-prod-alarms"
+  },
+  "alb_arn": {
+    "sensitive": false,
+    "type": "string",
+    "value": "arn:aws:elasticloadbalancing:us-east-1:471112980487:loadbalancer/app/devops-assessment-prod-alb/d4915e5504b62afd"
+  },
+  "alb_dns_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "devops-assessment-prod-alb-1683875137.us-east-1.elb.amazonaws.com"
+  },
+  "alb_security_group_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "sg-03c1aaa639abb8fc3"
+  },
+  "availability_zones": {
+    "sensitive": false,
+    "type": [
+      "list",
+      "string"
+    ],
+    "value": [
+      "us-east-1a",
+      "us-east-1b"
+    ]
+  },
+  "aws_account_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "471112980487"
+  },
+  "aws_caller_arn": {
+    "sensitive": false,
+    "type": "string",
+    "value": "arn:aws:iam::471112980487:user/delightsomeAdmin"
+  },
+  "aws_region": {
+    "sensitive": false,
+    "type": "string",
+    "value": "us-east-1"
+  },
+  "ecr_repository_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "devops-assessment-prod-app"
+  },
+  "ecr_repository_url": {
+    "sensitive": false,
+    "type": "string",
+    "value": "471112980487.dkr.ecr.us-east-1.amazonaws.com/devops-assessment-prod-app"
+  },
+  "ecs_cluster_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "devops-assessment-prod-cluster"
+  },
+  "ecs_service_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "devops-assessment-prod-app"
+  },
+  "environment": {
+    "sensitive": false,
+    "type": "string",
+    "value": "prod"
+  },
+  "log_group_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "/ecs/devops-assessment-prod"
+  },
+  "name_prefix": {
+    "sensitive": false,
+    "type": "string",
+    "value": "devops-assessment-prod"
+  },
+  "public_subnet_ids": {
+    "sensitive": false,
+    "type": [
+      "tuple",
+      [
+        "string",
+        "string"
+      ]
+    ],
+    "value": [
+      "subnet-09ad2ece2f33656c3",
+      "subnet-0f37d218e45d15206"
+    ]
+  },
+  "task_definition_arn": {
+    "sensitive": false,
+    "type": "string",
+    "value": "arn:aws:ecs:us-east-1:471112980487:task-definition/devops-assessment-prod-app:1"
+  },
+  "task_security_group_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "sg-051b451c7ad7a2b29"
+  },
+  "vpc_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "vpc-00ab5823f877f07bd"
+  }
+}

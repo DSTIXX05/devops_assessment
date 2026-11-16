@@ -1,4 +1,4 @@
-# Project Log — DevOps Assessment
+# Project Log - DevOps Assessment
 
 Incremental record of decisions, trade-offs, and learnings. Newest phase at the
 bottom of each dated section.
@@ -7,28 +7,29 @@ bottom of each dated section.
 
 ## Quick reference
 
-| Area               | Choice                                                                                                              |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| Application        | Node.js 24.14.1 LTS, Express 5.3.0, ESM                                                                             |
-| Tests              | Node built-in test runner (`node --test`), no test framework dependency                                             |
-| Container          | Multi-stage Dockerfile, `node:24.14.1-alpine`, non-root UID 1000                                                    |
-| Container health   | `node -e fetch(...)` in `HEALTHCHECK` — no curl/wget added                                                          |
-| Compute            | Amazon ECS on AWS Fargate (desired count **1**)                                                                     |
-| Registry           | Amazon ECR, SHA-tagged images, scan-on-push **informational**                                                       |
-| Vulnerability gate | **Trivy in CI, blocking on HIGH and CRITICAL**                                                                      |
-| Ingress            | ALB, HTTP:80 (no domain → no ACM/TLS), target port 3000                                                             |
-| Network            | Two-AZ VPC, public subnets, **no NAT Gateway**                                                                      |
-| IaC                | Terraform **1.17.1** (tested build; approved as 1.17.2, amended), region **us-east-1**, S3 backend + `use_lockfile` |
-| Terraform provider | `hashicorp/aws` **6.73.0** (pinned in `.terraform.lock.hcl`)                                                        |
-| Operator profile   | `AdminDelightsome` (IAM user + MFA) via `scripts/with-operator-creds.sh` — never root                               |
-| Environments       | Separate `dev` and `prod` roots sharing reusable modules                                                            |
-| Terraform apply    | **Local operator using an AWS admin CLI profile**                                                                   |
-| CI/CD              | GitHub Actions (see ADR-003 justification below)                                                                    |
-| AWS auth in CI     | GitHub OIDC → role scoped to ECR push + ECS deploy only                                                             |
+| Area               | Choice                                                                                                  |
+| ------------------ | ------------------------------------------------------------------------------------------------------- |
+| Application        | Node.js 24.14.1 LTS, Express 5.3.0, ESM                                                                 |
+| Tests              | Node built-in test runner (`node --test`), no test framework dependency                                 |
+| Container          | Multi-stage Dockerfile, `node:24.14.1-alpine`, non-root UID 1000                                        |
+| Container health   | `node -e fetch(...)` in `HEALTHCHECK`, no curl/wget added                                              |
+| Compute            | Amazon ECS on AWS Fargate (desired count **1**)                                                         |
+| Registry           | Amazon ECR, SHA-tagged images, scan-on-push **informational**                                           |
+| Vulnerability gate | **Trivy in CI, blocking on HIGH and CRITICAL**                                                          |
+| Ingress            | ALB, HTTP:80 (no domain → no ACM/TLS), target port 3000                                                 |
+| API docs           | `/openapi.json` (OpenAPI 3.0.3) + `/docs` (Swagger UI, `swagger-ui-dist` pinned, no runtime dependency) |
+| Network            | Two-AZ VPC, public subnets, **no NAT Gateway**                                                          |
+| IaC                | Terraform **1.17.2** (operator and CI now aligned), region **us-east-1**, S3 backend + `use_lockfile`   |
+| Terraform provider | `hashicorp/aws` **6.73.0** (pinned in `.terraform.lock.hcl`)                                            |
+| Operator profile   | `AdminDelightsome` (IAM user + MFA) via `scripts/with-operator-creds.sh`, never root                   |
+| Environments       | Separate `dev` and `prod` roots sharing reusable modules                                                |
+| Terraform apply    | **Local operator using an AWS admin CLI profile**                                                       |
+| CI/CD              | GitHub Actions (see ADR-003 justification below)                                                        |
+| AWS auth in CI     | GitHub OIDC → role scoped to ECR push + ECS deploy only                                                 |
 
 ---
 
-## 2026-11-14 — Approved architecture decisions (pre-build)
+## 2026-11-14 - Approved architecture decisions (pre-build)
 
 Confirmed by the user before implementation:
 
@@ -68,23 +69,23 @@ Confirmed by the user before implementation:
 
 ---
 
-## 2026-11-14 — Phase 1: application, container, local verification
+## 2026-11-14 - Phase 1: application, container, local verification
 
 ### Implemented
 
-- `app/src/config.js` — environment-driven config with validation. Port 0 is
+- `app/src/config.js`, environment-driven config with validation. Port 0 is
   allowed for ephemeral test binds; invalid `PORT` fails fast instead of
   silently falling back to a default.
-- `app/src/logger.js` — dependency-free JSON logger, one object per line.
+- `app/src/logger.js`, dependency-free JSON logger, one object per line.
   `info`/`debug` → stdout, `warn`/`error` → stderr. Non-serialisable fields are
   caught so logging can never crash a request.
-- `app/src/app.js` — app factory (no port binding) so tests can drive it
+- `app/src/app.js`, app factory (no port binding) so tests can drive it
   directly. Request correlation id, access logging, JSON 404, central error
   handler, `x-powered-by` disabled.
-- `app/src/server.js` — listener plus shutdown lifecycle: SIGTERM/SIGINT →
+- `app/src/server.js`, listener plus shutdown lifecycle: SIGTERM/SIGINT →
   `/health` returns 503 → close idle sockets → drain → exit 0, force-exit 1
   after `SHUTDOWN_TIMEOUT_MS`.
-- `app/Dockerfile` — three stages (`deps`, `test`, `runtime`).
+- `app/Dockerfile`, three stages (`deps`, `test`, `runtime`).
 - 23 tests across 4 suites; all pass on host and inside the container test
   stage.
 
@@ -104,14 +105,14 @@ is behind a mutable `draining` flag on the app rather than a constant response.
 
 **Two distinct health checks, deliberately.** The Docker `HEALTHCHECK` uses a
 Node one-liner (decision 7) so no `curl`/`wget` is added purely for health. On
-ECS, the Docker `HEALTHCHECK` is ignored — Fargate uses the task definition
+ECS, the Docker `HEALTHCHECK` is ignored, Fargate uses the task definition
 `healthCheck`, and the ALB has its own target-group check. Three mechanisms,
 two boundaries: in-container liveness vs. reachability through the task ENI.
 
 **Keep-alive and header timeouts raised above the ALB idle timeout.** Node's
 default 5s keep-alive is shorter than the ALB's 60s idle timeout. Without
 raising it to 65s/66s, the server can close a connection the ALB still believes
-is usable, producing sporadic 502s under low traffic — exactly the traffic
+is usable, producing sporadic 502s under low traffic, exactly the traffic
 pattern of an assessment environment.
 
 **`--ignore-scripts` on `npm ci` in the image.** Dependency lifecycle scripts
@@ -124,7 +125,7 @@ drift.
 
 **Image is 230 MB on disk.** The `node:24-alpine` base accounts for most of it;
 the Express tree is small. A distroless base would cut size and CVE surface
-further but complicates debugging (`no shell`) — a bad trade for an assessment
+further but complicates debugging (`no shell`), a bad trade for an assessment
 a reviewer needs to inspect.
 
 **Tests use the real HTTP server, not a mocked request object.** Fetching over
@@ -159,7 +160,7 @@ function.
 | `GET /api/status`                   | 200, full status payload                                              |
 | `HEALTHCHECK`                       | `healthy`                                                             |
 | `docker stop` (SIGTERM)             | exit code **0**, logs show `shutdown initiated` → `shutdown complete` |
-| Runtime image contents              | `node_modules`, `package.json`, `src` only — no tests, no dev deps    |
+| Runtime image contents              | `node_modules`, `package.json`, `src` only, no tests, no dev deps    |
 | `npm audit`                         | 0 vulnerabilities                                                     |
 
 ### Key learnings
@@ -168,14 +169,14 @@ function.
   `closeIdleConnections()` shutdown waits for the keep-alive timeout. Measured
   behaviour, not assumed.
 - Fargate ignores Dockerfile `HEALTHCHECK` entirely. Assuming it applies is a
-  common and silent mistake — the task definition must declare its own check.
+  common and silent mistake, the task definition must declare its own check.
 - Config read at module import time cannot be tested by mutating
   `process.env` inside the run; a child process with a controlled environment is
   the reliable pattern.
 
 ---
 
-## 2026-11-14 — Container size review (decision: no change)
+## 2026-11-14 - Container size review (decision: no change)
 
 Reviewer question: _"use multistage build to reduce the size of the container."_
 The build was already multi-stage (`deps` → `test` → `runtime`). Measured, rather
@@ -209,12 +210,12 @@ Options considered and rejected:
   is the floor. It would shrink our 4.3 MB and add a build step.
 
 **Decision: keep the current Dockerfile.** For this workload, image size is
-bounded by the Node runtime, and the number that matters — 54 MB compressed — is
+bounded by the Node runtime, and the number that matters, 54 MB compressed, is
 already at that floor.
 
 ---
 
-## 2026-11-14 — Phase 2: AWS foundation
+## 2026-11-14 - Phase 2: AWS foundation
 
 ### Amendments to approved decisions
 
@@ -222,12 +223,19 @@ already at that floor.
   1.17.1 from snap and upgrading would require `sudo`. Both versions support the
   S3 `use_lockfile` backend, so the architecture is unaffected. `required_version`
   is `~> 1.17.0` and `infrastructure/.terraform-version` records 1.17.1.
+
+  > **Corrected 2026-11-16.** This amendment was reversed. The snap package
+  > auto-refreshed to 1.17.2 on 2026-11-15 at 20:47 (change ID 209) alongside
+  > `helm` and `dbeaver-ce`, and nothing read `.terraform-version`, so the pin
+  > was never enforced. CI and the operator ran different binaries for the whole
+  > build. Both are now 1.17.2; see the 2026-11-16 entry.
+
 - **AWS provider pinned to 6.73.0** in `infrastructure/bootstrap/.terraform.lock.hcl`.
   The lock file is committed; the `.terraform/` directory is not.
 
 ### Delivered
 
-- `infrastructure/bootstrap/` — the state bucket and cost guardrail, as a local-state
+- `infrastructure/bootstrap/`, the state bucket and cost guardrail, as a local-state
   root (an S3 backend cannot create its own bucket):
   - S3 bucket with versioning, SSE-S3, full public-access block, TLS-only bucket
     policy, and lifecycle rules (abort incomplete multipart uploads after 7 days,
@@ -236,7 +244,7 @@ already at that floor.
     actual and 100 % forecasted, email notifications only when an address is supplied.
   - Outputs: bucket name, bucket region, account ID, caller ARN, budget name.
   - `README.md` with the apply procedure, cost table, and teardown ordering rule.
-- `docs/runbooks/operator-identity.md` — see the blocker below.
+- `docs/runbooks/operator-identity.md`, see the blocker below.
 - `terraform fmt -check` clean, `terraform init` successful, `terraform validate`
   successful.
 
@@ -245,7 +253,7 @@ already at that floor.
 | Item                                   | Cost                                                                                   |
 | -------------------------------------- | -------------------------------------------------------------------------------------- |
 | S3 state bucket (kilobytes, versioned) | fractions of a cent per month                                                          |
-| AWS Budgets                            | **$0** — first two budgets per account are free; email notifications need no SNS topic |
+| AWS Budgets                            | **$0**, first two budgets per account are free; email notifications need no SNS topic |
 
 **No AWS resources have been created.** `plan`/`apply` are intentionally withheld
 until the identity question below is resolved.
@@ -258,14 +266,14 @@ and §12.2 of the approved architecture, collapse the required separation betwee
 "human administrator" and "Terraform execution identity", and leave the root ARN
 in state and CloudTrail for every resource.
 
-**Resolution:** a dedicated IAM user was created — `AdminDelightsome` →
+**Resolution:** a dedicated IAM user was created, `AdminDelightsome` →
 `arn:aws:iam::471112980487:user/delightsomeAdmin`, in `us-east-1`, with
 `AdministratorAccess` and MFA enrolled (TOTP + two U2F devices). Root MFA is
 enabled (`RootMFA: 1`).
 
 **Residual finding:** the root user still has an **active access key**
 (`RootKeys: 1`). Root MFA does not protect API access through a key, and root
-keys cannot be scoped by policy. Deletion is recommended but was not performed —
+keys cannot be scoped by policy. Deletion is recommended but was not performed,
 it is destructive and the blast radius on existing tooling is unknown. Recorded
 in `docs/runbooks/operator-identity.md`.
 
@@ -283,12 +291,12 @@ explicit `profile`, it resolves that mechanism through an **account-scoped token
 cache** rather than the identity named in the profile. A root session cached from
 an earlier sign-in was reused. Setting `profile` also causes the provider to
 ignore exported environment credentials, so `aws configure export-credentials`
-did not fix it either — proven by re-planning with credentials exported and still
+did not fix it either, proven by re-planning with credentials exported and still
 getting `:root`.
 
 **Fix.**
 
-1. `profile = var.aws_profile == "" ? null : var.aws_profile` — null by default,
+1. `profile = var.aws_profile == "" ? null : var.aws_profile`, null by default,
    so the standard environment credential chain applies.
 2. `infrastructure/scripts/with-operator-creds.sh` exports the session's
    short-lived credentials once, prints the resolved identity and account, and
@@ -301,7 +309,7 @@ second call returned _"Credentials were refreshed, but the refreshed credentials
 are still expired"_. Capturing the output from a single call removed it.
 
 **Lesson.** A green plan is not evidence of the right identity. `aws_caller_arn`
-as an output is a cheap, permanent check — and it caught a root-authenticated
+as an output is a cheap, permanent check, and it caught a root-authenticated
 apply that the CLI itself reported as an IAM user.
 
 ### Verification evidence (Phase 2)
@@ -317,13 +325,13 @@ apply that the CLI itself reported as an IAM user.
 | Lifecycle rules              | `abort-incomplete-uploads`, `expire-old-state-versions` |
 | Plain HTTP to bucket         | `403`                                                   |
 | Budget                       | `devops-assessment-monthly`, `COST`, 30 USD/month       |
-| Budget notifications         | none — `budget_notification_email` is unset             |
+| Budget notifications         | none, `budget_notification_email` is unset             |
 
 ### Key learnings
 
 - `aws login` writes `login_session = arn:...` into `~/.aws/config`, so the
   identity type (root vs IAM user vs assumed role) is inspectable locally before
-  any API call — no credentials needed to catch a root profile.
+  any API call, no credentials needed to catch a root profile.
 - An explicit Terraform `profile` can override both the profile's stated identity
   and exported environment credentials. Verify identity through Terraform's own
   `aws_caller_identity`, not through the AWS CLI.
@@ -334,7 +342,7 @@ apply that the CLI itself reported as an IAM user.
 
 ---
 
-## 2026-11-15 — Scope decisions on the AWS account
+## 2026-11-15 - Scope decisions on the AWS account
 
 Recorded so these are not re-litigated later and a reviewer sees intent, not
 omission.
@@ -342,7 +350,7 @@ omission.
 1. **Root user: retained, explicitly out of scope.** The account root user still
    has an active access key (`RootKeys: 1`). Deleting keys and hardening the root
    identity is the account owner's responsibility and sits outside this project's
-   scope. No project resource is created, read, or managed by root — verified via
+   scope. No project resource is created, read, or managed by root, verified via
    the `aws_caller_arn` output, which reports
    `arn:aws:iam::471112980487:user/delightsomeAdmin`.
 
@@ -351,19 +359,19 @@ omission.
    operator path never uses root**, but the account as a whole is not hardened.
 
 2. **Budget notifications enabled.** `budget_notification_email` is configured in
-   `terraform.tfvars` and applied — state serial 12 records notifications at
+   `terraform.tfvars` and applied, state serial 12 records notifications at
    50 % / 80 % / 100 % actual and 100 % forecasted. The address itself is local
    configuration (gitignored), not committed.
 
 3. **Operator sessions are short-lived.** `aws login` console sessions expire in
-   well under an hour, so `with-operator-creds.sh` must be re-run — or
-   `aws login --profile AdminDelightsome` re-run — between work sessions. A bare
+   well under an hour, so `with-operator-creds.sh` must be re-run, or
+   `aws login --profile AdminDelightsome` re-run, between work sessions. A bare
    `terraform apply` bypasses the root-identity guard in that script; always use
    the wrapper.
 
 ---
 
-## 2026-11-15 — Phase 3: environment roots (backend wiring)
+## 2026-11-15 - Phase 3: environment roots (backend wiring)
 
 ### Delivered
 
@@ -412,7 +420,7 @@ must come from `terraform.tfvars`, which is per-directory and gitignored.
 | `init` against the remote S3 backend | **success** (dev and prod) |
 
 **Phase 3 exit condition met.** Both roots initialise remote state and plan
-cleanly: `1 to add` — the identity guard only — `0 to change`, `0 to destroy`.
+cleanly: `1 to add`, the identity guard only, `0 to change`, `0 to destroy`.
 Identity resolved as `arn:aws:iam::471112980487:user/delightsomeAdmin` in both
 plans. State reachability was confirmed independently: the bucket held no objects
 before `apply` (as expected) and the `use_lockfile` lock was acquired and released
@@ -422,7 +430,7 @@ cleanly ("Releasing state lock").
 
 - `use_lockfile` is a _backend_ argument, so it belongs in `backend.tf` and
   cannot appear in a resource file. The bootstrap root has no backend block at
-  all — local state locks itself via `.terraform.tfstate.lock.info`.
+  all, local state locks itself via `.terraform.tfstate.lock.info`.
 - `init -backend=false` and `validate` need no credentials, which makes
   configuration errors catchable while an AWS session is expired.
 - **Expired exported credentials shadow everything.** A long-lived shell that once
@@ -430,8 +438,8 @@ cleanly ("Releasing state lock").
   `AWS_ACCESS_KEY_ID` / `AWS_SESSION_TOKEN` in its environment indefinitely. After
   those expire, `aws login` on the profile still succeeds and
   `aws sts --profile X` still succeeds (an explicit profile wins), but anything
-  reading the default credential chain — Terraform, `export-credentials`, the
-  wrapper — fails with _"Credentials were refreshed, but the refreshed
+  reading the default credential chain, Terraform, `export-credentials`, the
+  wrapper, fails with _"Credentials were refreshed, but the refreshed
   credentials are still expired."_ Clearing the `AWS_*` variables fixed it. When
   a session appears not to refresh, inspect the shell before re-authenticating.
 - A bare `terraform plan` (no wrapper) with `AWS_PROFILE` pointing at a
@@ -440,18 +448,18 @@ cleanly ("Releasing state lock").
 
 ---
 
-## 2026-11-15 — Phase 4: networking and security groups
+## 2026-11-15 - Phase 4: networking and security groups
 
 ### Delivered
 
 Two reusable modules, wired into both environment roots.
 
-**`modules/networking`** — VPC, two public subnets across two AZs, internet
+**`modules/networking`**, VPC, two public subnets across two AZs, internet
 gateway, public route table, associations. Inputs: `name_prefix`, `vpc_cidr`,
 `availability_zone_count`, `tags`. Outputs: `vpc_id`, `public_subnet_ids`,
 `public_subnet_cidrs`, `availability_zones`, `internet_gateway_id`.
 
-**`modules/security`** — ALB and task security groups plus four rules. Inputs:
+**`modules/security`**, ALB and task security groups plus four rules. Inputs:
 `name_prefix`, `vpc_id`, `app_port`, `tags`. Outputs: `alb_security_group_id`,
 `task_security_group_id`.
 
@@ -468,14 +476,14 @@ are the pattern AWS now recommends.
 subnet creation with an error that reads like a permissions problem.
 
 **`map_public_ip_on_launch = true`, with a caveat in the code.** This attribute
-does not govern awsvpc task ENIs — public IPs for Fargate are controlled by
+does not govern awsvpc task ENIs, public IPs for Fargate are controlled by
 `assign_public_ip` on the ECS service (Phase 5). It is set so the subnet's intent
 is explicit, not because it is what makes tasks reachable.
 
 **Task egress left unrestricted, and documented as such.** Fargate needs egress
 for ECR pulls and CloudWatch Logs, and there is no NAT Gateway to traverse
 (ADR-002). Restricting it would need interface endpoints at roughly $7/month per
-endpoint per AZ — more than the resources they protect. The comment in
+endpoint per AZ, more than the resources they protect. The comment in
 `security/main.tf` states this plainly rather than implying a control that does
 not exist.
 
@@ -485,7 +493,7 @@ Verification returned **empty output with exit code 0** for every `ec2`
 describe call, which reads as "the resources were not created".
 
 Cause: exported credentials carry no region, so the CLI fell back to the
-`[default]` profile's region — `eu-north-1` — while the project lives in
+`[default]` profile's region, `eu-north-1`, while the project lives in
 `us-east-1`. Terraform was unaffected because the provider sets `region`
 explicitly.
 
@@ -516,7 +524,7 @@ security groups are free. Console IDs for dev: `vpc-0dc7ff0118a348616`,
 
 ---
 
-## 2026-11-15 — Phase 5 (first half): registry, logs, ingress, compute
+## 2026-11-15 - Phase 5 (first half): registry, logs, ingress, compute
 
 ### Delivered
 
@@ -555,7 +563,7 @@ prod's repository.
 
 **Two IAM roles, deliberately separate.** The execution role (managed
 `AmazonECSTaskExecutionRolePolicy`, partition-aware) pulls images and writes
-logs. The task role has **no policies at all** — the application calls no AWS
+logs. The task role has **no policies at all**, the application calls no AWS
 APIs. `enable_execute_command` is left off because it would require adding SSM
 permissions to the task role.
 
@@ -592,7 +600,7 @@ actually proven end to end, rather than asserted in a diagram.
 - **AWS provider v6 replaced `scheme = "internet-facing"` with `internal = false`
   on `aws_lb`.** `validate` catches it immediately; the error reads as though the
   resource type were wrong.
-- `data.aws_region.current.name` is deprecated in v6 — use `.region`.
+- `data.aws_region.current.name` is deprecated in v6, use `.region`.
 - `terraform output` now validates provider credentials, so it fails with an
   expired session even though it only reads state. Run it through the wrapper.
 - The provider schema can be inspected directly with
@@ -601,7 +609,7 @@ actually proven end to end, rather than asserted in a diagram.
 
 ---
 
-## 2026-11-15 — Phase 6: alarms
+## 2026-11-15 - Phase 6: alarms
 
 ### Delivered (dev)
 
@@ -620,7 +628,7 @@ first ten alarm metrics are free and SNS email delivery is free at this volume.
 ### Incident: an alarm that could never have fired
 
 The first apply produced five alarms, four of which sat in `INSUFFICIENT_DATA`.
-That is expected for a few minutes after creation — but one of them was never
+That is expected for a few minutes after creation, but one of them was never
 going to resolve.
 
 **The CloudWatch metric is `UnHealthyHostCount`, with a capital H.** The natural
@@ -642,7 +650,7 @@ real datapoints before it counts as monitoring.
 ### Second finding: a signal I had wrongly written off
 
 An earlier comment claimed `LiveTaskCount` requires Container Insights. Listing
-`AWS/ECS` metrics for the cluster disproved it — `LiveTaskCount`,
+`AWS/ECS` metrics for the cluster disproved it, `LiveTaskCount`,
 `CPUUtilization`, and `MemoryUtilization` are all published per service without
 Container Insights. The comment was corrected and the task-count alarm added,
 which closes §11.2's "running task count" item at no cost.
@@ -651,7 +659,7 @@ which closes §11.2's "running task count" item at no cost.
 
 CloudWatch creates a metric only once a datapoint exists. No 5xx has ever been
 served by this service, so the metric is absent and the alarm sits at
-`INSUFFICIENT_DATA` — resolving to `OK` because `treat_missing_data =
+`INSUFFICIENT_DATA`, resolving to `OK` because `treat_missing_data =
 "notBreaching"`. Correct behaviour, but worth stating explicitly: the first real
 5xx is what brings the alarm to life.
 
@@ -670,31 +678,31 @@ brief alarm window during a fresh deploy, smoothed by the 2-period evaluation.
 | `live-task-count-low` | `LiveTaskCount`             | resolved after creation     |
 
 SNS subscription: `delightsomedunsiasolo24@gmail.com` in
-`PendingConfirmation` — AWS requires the confirmation link to be clicked before
+`PendingConfirmation`, AWS requires the confirmation link to be clicked before
 any alarm notification is delivered. Until then the alarms change state
 correctly but nobody is told.
 
-*(Update, later the same day: the subscription is now **Confirmed** and alarm
-notifications deliver.)*
+_(Update, later the same day: the subscription is now **Confirmed** and alarm
+notifications deliver.)_
 
 ---
 
-## 2026-11-15 — Phase 7: OIDC, workflows, and the first pipeline deployment
+## 2026-11-15 - Phase 7: OIDC, workflows, and the first pipeline deployment
 
 ### Outcome
 
 The pipeline deploys dev end to end, with no stored credentials anywhere.
 
-| Evidence | Value |
-| --- | --- |
-| Pipeline commit | `e6c570c534f38aaaf13fc98e7b843e32fd9c7127` |
-| Live `/api/status` → `commitSha` | `e6c570c534f38aaaf13fc98e7b843e32fd9c7127` ✅ |
-| ECS task definition | revision **2**, rollout `COMPLETED`, 1 task running |
-| Chain exercised | OIDC assume → ECR push → register revision → update service → `services-stable` → `/health` 200 → commit match |
+| Evidence                         | Value                                                                                                          |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Pipeline commit                  | `e6c570c534f38aaaf13fc98e7b843e32fd9c7127`                                                                     |
+| Live `/api/status` → `commitSha` | `e6c570c534f38aaaf13fc98e7b843e32fd9c7127` ✅                                                                  |
+| ECS task definition              | revision **2**, rollout `COMPLETED`, 1 task running                                                            |
+| Chain exercised                  | OIDC assume → ECR push → register revision → update service → `services-stable` → `/health` 200 → commit match |
 
 ### The six defects this phase exposed
 
-Everything below failed *before* a single deployment succeeded. Each is a
+Everything below failed _before_ a single deployment succeeded. Each is a
 distinct failure mode worth knowing.
 
 **1. `working-directory: .` in the test job.** The job defaults to `app/`; the
@@ -702,14 +710,14 @@ override put Docker at the repo root looking for `/Dockerfile`. My bug.
 
 **2. `trivy-action@0.28.0` does not exist.** The action failed to resolve during
 "Set up job" and the job reported failure in 2 seconds. The scan never ran. A
-security gate that cannot start is *indistinguishable in the summary* from one
-that found something — the worst failure mode a gate has. Pinned to the commit
+security gate that cannot start is _indistinguishable in the summary_ from one
+that found something, the worst failure mode a gate has. Pinned to the commit
 behind `v0.36.0`.
 
 **3. Seven HIGH/CRITICAL CVEs in the Alpine base OS.** Real findings. Fixed with
 `apk upgrade --no-cache` (Alpine 3.23.4 → 3.23.8).
 
-**4. `CVE-2026-73566` in `tar` 7.5.9.** Not our dependency — it is bundled inside
+**4. `CVE-2026-73566` in `tar` 7.5.9.** Not our dependency, it is bundled inside
 npm at `/usr/local/lib/node_modules/npm`. Fixed by deleting npm, npx and corepack
 from the runtime stage. Earlier in the build this was rejected as a 17 MB size
 optimisation; size was the wrong argument, attack surface was the right one.
@@ -733,7 +741,7 @@ repository. Almost all documentation still shows the older, ID-less form.
 indication of which condition failed.
 
 Diagnosed by adding a throwaway `workflow_dispatch` step that requested a token
-and printed its decoded claims — not by re-reading documentation. The branch was
+and printed its decoded claims, not by re-reading documentation. The branch was
 deleted afterwards.
 
 **6. `ecs:DescribeTaskDefinition` cannot be resource-scoped.** ECS authorises it
@@ -768,7 +776,165 @@ three `Resource:"*"` statements, all documented: `ecr:GetAuthorizationToken`,
   `resource: *` while the policy names an ARN, the action likely ignores ARNs
   entirely.
 - A CI job that fails during "Set up job" failed before running anything. Check
-  *where* it failed before assuming the check did its job.
+  _where_ it failed before assuming the check did its job.
 - Duplicated deploy jobs in a workflow are a maintenance trap: the same edit had
   to be applied twice, twice. A composite action would be the fix if the workflow
   grows further.
+
+---
+
+## 2026-11-16 - Phase 8: prod deployment, echo endpoint, API documentation
+
+### Outcome
+
+Both environments are live, deployed by the pipeline, and independently verified.
+
+| Environment | ALB                                                                 | Commit    | `/docs` | `/openapi.json`      |
+| ----------- | ------------------------------------------------------------------- | --------- | ------- | -------------------- |
+| dev         | `devops-assessment-dev-alb-343497269.us-east-1.elb.amazonaws.com`   | `65317c0` | 200     | 200, 3.0.3, 4 paths |
+| prod        | `devops-assessment-prod-alb-1683875137.us-east-1.elb.amazonaws.com` | `65317c0` | 200     | 200, 3.0.3, 4 paths |
+
+`/api/status` in each environment reports the commit that was actually deployed,
+which is how the pipeline knows the running revision is the one it built.
+
+### Delivered
+
+- **`POST /api/echo`**, exercises the request path end to end and gives a
+  reviewer something stateful to try. Validates: `message` required, string,
+  non-empty after trim, max 500 characters. Returns `{status, message, length,
+receivedAt}` with the trimmed value.
+- **`GET /openapi.json`**, OpenAPI 3.0.3 describing all four endpoints,
+  including the echo validation rules and both `400` cases.
+- **`GET /docs`**, Swagger UI viewer, so the API can be explored and called
+  from a browser instead of via curl.
+- **Prod environment protection**, `deployment_branch_policy` restricted to
+  `main`; previously any branch could deploy to prod.
+- **Idempotent re-runs**, deploy jobs check whether the SHA tag already exists
+  in ECR before building, so a re-dispatched run does not fail on the immutable
+  tag policy.
+
+### Key decisions & trade-offs
+
+- **No `swagger-ui-express`.** It would add a package tree to the runtime image
+  for the Trivy gate to scan. A _documentation_ dependency should never be able
+  to block a deployment on a vulnerability it introduced. Instead the spec is a
+  plain object in `src/api-docs.js` and the viewer is hand-written HTML.
+- **CDN version pinned, not floating.** `swagger-ui-dist@5.17.14` is a literal in
+  the source. A floating tag would mean an unannounced third-party script
+  executing in a reviewer's browser, on a page served from our ALB.
+- **The spec is tested.** Four tests assert that the document is valid, that it
+  covers _exactly_ the endpoints the service exposes, that it states the real
+  validation limits, and that the viewer points at the served spec. A hand-written
+  spec drifts; a tested one fails the build when it does.
+- **`/docs` accepted the CDN trade-off** rather than vendoring the assets. If
+  offline operation were required, the bundle would need to be served locally and
+  added to the image.
+
+### Verification evidence
+
+- `application.yml` run `43810304007`, dev: OIDC assume → ECR push → register
+  revision → update service → `services-stable` → `/health` → `commitSha` match.
+- `application.yml` run `43810936644`, prod: same path, 2m50s of job time after
+  the environment's 5-minute wait timer.
+- `npm test`, **34 passing**, 4 of them new (valid document, endpoint coverage,
+  validation rules, viewer wiring).
+- Prod validation behaviour confirmed at `31db5e5`: missing field → `400`,
+  malformed JSON → `400`, valid echo → `200` with trimmed message.
+
+### Key learnings
+
+- A viewer served over HTTP that loads a CDN script is still a supply-chain
+  dependency, even though nothing is installed. Pin the version.
+- Documenting an endpoint in a spec that nothing verifies is a comment, not a
+  contract. One test asserting exact path coverage was cheap and is the only
+  thing that will catch drift.
+- Ordering matters when the same feature ships to two environments: dev first
+  proves the image, prod proves the gate. Prod was verified separately rather
+  than assumed from dev.
+
+---
+
+## 2026-11-16 - Teardown drill, rebuild, and Terraform version drift
+
+### Outcome
+
+Executed destroy → rebuild → redeploy → destroy as a rehearsal for the README's
+teardown procedure. Both environments were destroyed, rebuilt from code alone,
+redeployed through the pipeline, verified live, then destroyed again. The
+account is now empty of assessment resources.
+
+Evidence is committed under `docs/screenshots/` (16 images) and
+`docs/evidence/` (Terraform outputs, GitHub variables, live API responses
+captured before the first destroy).
+
+### Finding 1: `terraform destroy` refuses a non-empty ECR repository
+
+```
+Error: ECR Repository (devops-assessment-prod-app) not empty
+RepositoryNotEmptyException
+```
+
+Not a Terraform defect. `modules/ecr` defaults `force_delete = false` precisely
+so that a destroy cannot silently discard release artefacts, and the default
+held. The first destroy run stopped on it after removing 22 resources.
+
+Resolution was an explicit script, `scripts/empty-ecr.sh`, rather than
+flipping `force_delete = true`, which would have weakened the protection
+permanently to solve a one-off problem. The runbook therefore reads:
+
+1. empty both repositories deliberately
+2. destroy prod
+3. destroy dev
+
+**Trade-off accepted:** teardown needs a deliberate step. That is the point of
+the default.
+
+### Finding 2: two Terraform processes, one state
+
+A destroy collided with an in-flight `apply` holding the state lock:
+
+```
+StatusCode: 412, PreconditionFailed
+Operation: OperationTypeApply   Who: dstixx05   Version: 1.17.2
+```
+
+`use_lockfile` converted what would have been a corrupted state file into a
+clean refusal. **The lock worked; the concurrency was the bug.** Likely cause: a
+cancelled `terraform apply` killed the wrapper script but not the `terraform`
+child, which kept running and kept the lock.
+
+Operational rule recorded: one Terraform operation per state at a time. Recovery
+for a genuinely stale lock is `terraform force-unlock <ID>`, but only after
+`pgrep -af terraform` confirms nothing is running. `use_lockfile` does not expire
+stale locks, that is its one operational weakness compared with DynamoDB
+locking, and it is worth the trade to avoid a second billable resource.
+
+### Finding 3: Terraform version drift between CI and the operator
+
+| Where                               | Version                    |
+| ----------------------------------- | -------------------------- |
+| snap binary (what actually ran)     | **1.17.2**                 |
+| `infrastructure/.terraform-version` | 1.17.1                     |
+| `infrastructure.yml` pin            | 1.17.1                     |
+| `required_version`                  | `~> 1.17.0`, permits both |
+
+Snap auto-refreshed 1.17.1 → 1.17.2 on 2026-11-15 at 20:47, and no tool read the
+version file, so the declared pin was fiction for the entire build. `~> 1.17.0`
+was wide enough that nothing complained.
+
+Fixed by aligning both to 1.17.2: the workflow pin and the version file. The
+broader lesson is that a version file nobody enforces is documentation, not a
+constraint.
+
+### Key learnings
+
+- A tool that auto-updates silently (snap, brew, `latest` tags) cannot be the
+  thing that pins a version. Pin in a file _and_ enforce it in CI.
+- When a lock error appears, the first question is "what else is running", not
+  "why is the lock broken". Locks fail loudly because the alternative is silent
+  divergence.
+- Safety defaults are validated by the teardown, not the build. `force_delete =
+false` was correct precisely because it was inconvenient at exactly the moment
+  someone wanted it to be convenient.
+- A cancelled process is not a stopped process. Killing a wrapper does not
+  necessarily kill its child.
