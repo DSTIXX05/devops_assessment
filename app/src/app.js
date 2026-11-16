@@ -14,6 +14,10 @@ import { logger } from "./logger.js";
 
 const startedAt = Date.now();
 
+// Upper bound for the echo endpoint. Keeps a single request from buffering an
+// unbounded body into memory.
+const MAX_ECHO_LENGTH = 500;
+
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 
 /**
@@ -72,6 +76,10 @@ export function createApp() {
   app.use(correlationMiddleware);
   app.use(accessLogMiddleware);
 
+  // JSON bodies only, with a small limit. Nothing else is accepted because no
+  // endpoint needs it.
+  app.use(express.json({ limit: "16kb" }));
+
   // Basic service information.
   app.get("/", (req, res) => {
     res.status(200).json({
@@ -108,6 +116,43 @@ export function createApp() {
     });
   });
 
+  // Echo endpoint: exercises request parsing, validation and error mapping end
+  // to end, rather than only returning static data.
+  //
+  // Request:  { "message": "<non-empty string>" }
+  // Response: 200 { status, message, length, receivedAt }
+  //           400 { error: "validation_failed", message, requestId }
+  app.post("/api/echo", (req, res) => {
+    const raw = req.body?.message;
+
+    if (typeof raw !== "string" || raw.trim() === "") {
+      res.status(400).json({
+        error: "validation_failed",
+        message: '"message" is required and must be a non-empty string.',
+        requestId: req.id,
+      });
+      return;
+    }
+
+    const message = raw.trim();
+
+    if (message.length > MAX_ECHO_LENGTH) {
+      res.status(400).json({
+        error: "validation_failed",
+        message: `"message" must be at most ${MAX_ECHO_LENGTH} characters.`,
+        requestId: req.id,
+      });
+      return;
+    }
+
+    res.status(200).json({
+      status: "ok",
+      message,
+      length: message.length,
+      receivedAt: new Date().toISOString(),
+    });
+  });
+
   // Consistent JSON 404 rather than the Express HTML default.
   app.use((req, res) => {
     res.status(404).json({
@@ -121,6 +166,24 @@ export function createApp() {
   // internal details are not exposed to callers.
   // eslint-disable-next-line no-unused-vars -- Express identifies error handlers by arity.
   app.use((err, req, res, next) => {
+    // Malformed JSON is a client error, not a server error. The body parser
+    // throws before any route handler runs, so it arrives here rather than
+    // being caught per-route.
+    if (err?.type === "entity.parse.failed") {
+      logger.warn("invalid JSON request body", {
+        requestId: req.id,
+        method: req.method,
+        path: req.originalUrl,
+      });
+
+      res.status(400).json({
+        error: "invalid_json",
+        message: "Request body must be valid JSON.",
+        requestId: req.id,
+      });
+      return;
+    }
+
     logger.error("unhandled request error", {
       requestId: req.id,
       method: req.method,
