@@ -224,3 +224,52 @@ describe("POST /api/echo", () => {
     assert.equal(body.error, "invalid_json");
   });
 });
+
+describe("API documentation", () => {
+  let server;
+  let baseUrl;
+
+  before(async () => {
+    server = await startServer(createApp());
+    baseUrl = `http://127.0.0.1:${server.address().port}`;
+  });
+
+  after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+  });
+
+  it("serves a valid OpenAPI document", async () => {
+    const response = await fetch(`${baseUrl}/openapi.json`);
+    const doc = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.match(doc.openapi, /^3\./);
+    assert.ok(doc.info?.title);
+  });
+
+  it("documents every public endpoint", async () => {
+    const doc = await (await fetch(`${baseUrl}/openapi.json`)).json();
+    const paths = Object.keys(doc.paths).sort();
+
+    assert.deepEqual(paths, ["/", "/api/echo", "/api/status", "/health"]);
+  });
+
+  it("describes the echo validation rules", async () => {
+    const doc = await (await fetch(`${baseUrl}/openapi.json`)).json();
+    const message = doc.components.schemas.EchoRequest.properties.message;
+
+    assert.equal(message.maxLength, 500);
+    assert.equal(doc.paths["/api/echo"].post.responses["400"] !== undefined, true);
+  });
+
+  it("serves the interactive viewer", async () => {
+    const response = await fetch(`${baseUrl}/docs`);
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type") ?? "", /text\/html/);
+    assert.match(html, /SwaggerUIBundle/);
+    // The viewer must point at the spec this service actually serves.
+    assert.match(html, /\/openapi\.json/);
+  });
+});

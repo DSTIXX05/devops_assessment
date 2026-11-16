@@ -11,6 +11,7 @@ import express from "express";
 
 import { config } from "./config.js";
 import { logger } from "./logger.js";
+import { openapiDocument, swaggerUiPage } from "./api-docs.js";
 
 const startedAt = Date.now();
 
@@ -151,6 +152,20 @@ export function createApp() {
       length: message.length,
       receivedAt: new Date().toISOString(),
     });
+  });
+
+  // Machine-readable description plus an interactive explorer.
+  //
+  // No npm dependency is added: the specification lives in src/api-docs.js and
+  // the viewer is a pinned CDN build. Pulling in swagger-ui-express would add a
+  // package tree to the runtime image for the Trivy gate to scan - and
+  // documentation should never be able to block a deployment.
+  app.get("/openapi.json", (req, res) => {
+    res.status(200).json(openapiDocument);
+  });
+
+  app.get("/docs", (req, res) => {
+    res.status(200).type("html").send(swaggerUiPage);
   });
 
   // Consistent JSON 404 rather than the Express HTML default.
