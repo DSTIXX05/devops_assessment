@@ -49,8 +49,11 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
         with:
-          # Matches infrastructure/.terraform-version
-          terraform_version: "1.17.1"
+          # Matches infrastructure/.terraform-version. Both must move together:
+          # a mismatch means CI validates with a different binary than the one
+          # that applies, so "passes in CI" proves nothing about the operator's
+          # machine, and vice versa.
+          terraform_version: "1.17.2"
 
       - name: terraform fmt
         working-directory: .
