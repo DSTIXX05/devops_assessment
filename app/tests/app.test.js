@@ -144,3 +144,83 @@ describe("HTTP API", () => {
     }
   });
 });
+
+describe("POST /api/echo", () => {
+  let server;
+  let baseUrl;
+
+  before(async () => {
+    server = await startServer(createApp());
+    baseUrl = `http://127.0.0.1:${server.address().port}`;
+  });
+
+  after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+  });
+
+  // Passing a string lets a test send deliberately malformed JSON.
+  function post(body) {
+    return fetch(`${baseUrl}/api/echo`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: typeof body === "string" ? body : JSON.stringify(body),
+    });
+  }
+
+  it("echoes a valid message, trimmed", async () => {
+    const response = await post({ message: "  hello world  " });
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.status, "ok");
+    assert.equal(body.message, "hello world");
+    assert.equal(body.length, 11);
+    assert.ok(!Number.isNaN(Date.parse(body.receivedAt)));
+  });
+
+  it("rejects a body with no message field", async () => {
+    const response = await post({});
+    const body = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.equal(body.error, "validation_failed");
+    assert.ok(body.requestId);
+  });
+
+  it("rejects a non-string message", async () => {
+    const response = await post({ message: 42 });
+
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error, "validation_failed");
+  });
+
+  it("rejects a whitespace-only message", async () => {
+    const response = await post({ message: "   " });
+
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error, "validation_failed");
+  });
+
+  it("accepts a message of exactly 500 characters", async () => {
+    const response = await post({ message: "x".repeat(500) });
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.length, 500);
+  });
+
+  it("rejects a message longer than 500 characters", async () => {
+    const response = await post({ message: "x".repeat(501) });
+
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error, "validation_failed");
+  });
+
+  it("returns 400 rather than 500 for malformed JSON", async () => {
+    const response = await post("{ this is not json");
+    const body = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.equal(body.error, "invalid_json");
+  });
+});
