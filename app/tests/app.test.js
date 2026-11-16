@@ -259,7 +259,10 @@ describe("API documentation", () => {
     const message = doc.components.schemas.EchoRequest.properties.message;
 
     assert.equal(message.maxLength, 500);
-    assert.equal(doc.paths["/api/echo"].post.responses["400"] !== undefined, true);
+    assert.equal(
+      doc.paths["/api/echo"].post.responses["400"] !== undefined,
+      true,
+    );
   });
 
   it("serves the interactive viewer", async () => {
