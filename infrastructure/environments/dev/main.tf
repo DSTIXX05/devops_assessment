@@ -107,8 +107,9 @@ module "monitoring" {
   cluster_name = local.ecs_cluster_name
   service_name = local.ecs_service_name
 
-  alarm_email = var.alarm_email
-  tags        = var.extra_tags
+  alarm_email   = var.alarm_email
+  desired_count = var.desired_count
+  tags          = var.extra_tags
 }
 
 # -----------------------------------------------------------------------------

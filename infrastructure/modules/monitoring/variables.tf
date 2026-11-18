@@ -3,6 +3,17 @@ variable "name_prefix" {
   type        = string
 }
 
+variable "desired_count" {
+  description = "Expected number of running tasks. The live-task-count alarm fires when the count drops below this, so prod (2) alerts on degradation while dev (1) alerts on a full outage."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.desired_count >= 1
+    error_message = "desired_count must be at least 1."
+  }
+}
+
 variable "log_retention_days" {
   description = "CloudWatch Logs retention. Seven days is enough to debug an assessment deployment and caps ingestion storage cost."
   type        = number

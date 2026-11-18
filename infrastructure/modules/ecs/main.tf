@@ -192,6 +192,14 @@ resource "aws_ecs_service" "app" {
     container_port   = var.container_port
   }
 
+  # Spread tasks across Availability Zones so the two public subnets each host
+  # a task when desired_count is 2. This is what gives prod multi-AZ
+  # availability; with a single task (dev) it has no effect.
+  ordered_placement_strategy {
+    type  = "spread"
+    field = "attribute:ecs.availability-zone"
+  }
+
   # Automatic rollback if a new deployment never reaches a healthy steady
   # state. This detects infrastructure-level failure, not application bugs -
   # the pipeline still verifies the endpoint itself.

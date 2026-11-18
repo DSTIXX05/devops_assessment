@@ -68,7 +68,7 @@ variable "container_image" {
 }
 
 variable "desired_count" {
-  description = "Initial ECS task count. One is a deliberate single point of failure (ADR-005); this deployment is not highly available."
+  description = "Initial ECS task count. Prod runs two tasks spread across AZs for multi-AZ availability; dev runs one."
   type        = number
   default     = 1
 

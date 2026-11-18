@@ -58,7 +58,7 @@ The two environments share **modules**, not resources. Destroying `prod` cannot 
 | VPC CIDR           | `10.20.0.0/16`                              | `10.30.0.0/16`                                      |
 | Name prefix        | `devops-assessment-dev`                     | `devops-assessment-prod`                            |
 | State key          | `dev/terraform.tfstate`                     | `prod/terraform.tfstate`                            |
-| Desired tasks      | 1                                           | 1                                                   |
+| Desired tasks      | 1                                           | 2                                                   |
 | Deployed by        | `deploy-dev` job, **on any push to `main`** | `deploy-prod` job, **manual dispatch only**         |
 | OIDC subject       | `repo:...:ref:refs/heads/main`              | `repo:...:environment:prod`                         |
 | GitHub environment | none                                        | `prod`, with 5-minute wait and branch policy `main` |
@@ -116,8 +116,8 @@ human to dispatch it and then wait.
 | Public subnets     | Two, one per AZ, `/24` each via `cidrsubnet`                                                                                       |
 | Availability zones | Resolved dynamically, filtered to `opt-in-status = opt-in-not-required` so `us-east-1e` (which lacks Fargate capacity) is excluded |
 | Internet Gateway   | One per VPC; default route `0.0.0.0/0`                                                                                             |
-| NAT Gateway        | **None**. A deliberate cost decision; see [design decisions](design-decisions.md)                                                 |
-| Task public IP     | **Yes**: `assign_public_ip = true`, required to pull from ECR without a NAT                                                       |
+| NAT Gateway        | **None**. A deliberate cost decision; see [design decisions](design-decisions.md)                                                  |
+| Task public IP     | **Yes**: `assign_public_ip = true`, required to pull from ECR without a NAT                                                        |
 
 Security group rules are created as standalone `aws_vpc_security_group_ingress_rule` /
 `egress_rule` resources rather than inline blocks, so they can be reasoned about and
@@ -141,11 +141,11 @@ can reach ECR and CloudWatch Logs without a NAT Gateway or VPC endpoints.
 | ---------------- | --------------------------------------------------------------------------------------- |
 | Launch type      | Fargate, `runtime_platform` pinned to `X86_64`                                          |
 | Size             | 0.25 vCPU / 512 MB                                                                      |
-| Desired count    | 1                                                                                       |
+| Desired count    | dev 1; prod 2, spread across AZs                                                        |
 | Base image       | `node:24.14.1-alpine`, patched with `apk upgrade --no-cache`                            |
 | User             | `node`, uid 1000                                                                        |
 | Package managers | `npm`, `npx`, `corepack` deleted from the runtime layer                                 |
-| Health check     | `node -e "fetch('http://127.0.0.1:3000/health')"`, no `curl` added to the image        |
+| Health check     | `node -e "fetch('http://127.0.0.1:3000/health')"`, no `curl` added to the image         |
 | Logging          | `awslogs` driver to `/ecs/<name_prefix>`                                                |
 | Deployment       | `minimum_healthy_percent = 100`, `maximum_percent = 200`, circuit breaker with rollback |
 
@@ -182,7 +182,7 @@ subscription:
 | --------------------- | --------------------------- | ----------------------------- |
 | `target-5xx`          | `HTTPCode_Target_5XX_Count` | The application returns 5xx   |
 | `unhealthy-hosts`     | `UnHealthyHostCount`        | The ALB has no healthy target |
-| `live-task-count-low` | `LiveTaskCount`             | Below 1, the task is gone    |
+| `live-task-count-low` | `LiveTaskCount`             | Below 1, the task is gone     |
 | `ecs-cpu-high`        | `CPUUtilization`            | Above 80%                     |
 | `ecs-memory-high`     | `MemoryUtilization`         | Above 85%                     |
 
@@ -203,20 +203,22 @@ and cannot gate a pipeline. Trivy in CI is the blocking control.
 
 What breaks, and how you would find out.
 
-| Failure                         | Effect                                   | Detected by                                                                                                                     |
-| ------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| Task crashes on start           | ALB has no healthy target                | `unhealthy-hosts` alarm, `live-task-count-low` alarm                                                                            |
-| Image pull fails                | Task never starts                        | ECS service events, `live-task-count-low`                                                                                       |
-| Application returns 5xx         | Users see errors                         | `target-5xx` alarm                                                                                                              |
-| Bad deploy                      | Circuit breaker rolls back automatically | Pipeline `services-stable` wait fails                                                                                           |
-| Deploy succeeds but wrong image | Correct-looking deploy, wrong code       | `/api/status` `commitSha` compared to `$GITHUB_SHA` in the pipeline                                                             |
+| Failure                         | Effect                                   | Detected by                                                                                                                    |
+| ------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Task crashes on start           | ALB has no healthy target                | `unhealthy-hosts` alarm, `live-task-count-low` alarm                                                                           |
+| Image pull fails                | Task never starts                        | ECS service events, `live-task-count-low`                                                                                      |
+| Application returns 5xx         | Users see errors                         | `target-5xx` alarm                                                                                                             |
+| Bad deploy                      | Circuit breaker rolls back automatically | Pipeline `services-stable` wait fails                                                                                          |
+| Deploy succeeds but wrong image | Correct-looking deploy, wrong code       | `/api/status` `commitSha` compared to `$GITHUB_SHA` in the pipeline                                                            |
 | Pipeline silently disabled      | No visible failure                       | **Not detected**. A workflow that never runs proves nothing; this is why the Trivy action version was pinned to a real release |
-| State lock contention           | Terraform refuses to run                 | Explicit 412 error, see [teardown runbook](runbooks/teardown.md)                                                                |
+| State lock contention           | Terraform refuses to run                 | Explicit 412 error, see [teardown runbook](runbooks/teardown.md)                                                               |
 
 ---
 
 ## What this design does not give you
 
-Single task count means no high availability despite the two-AZ ALB. HTTP only. Public
-subnets. No autoscaling. These are decisions with reasons, not oversights, see
-[limitations](limitations.md) and [design decisions](design-decisions.md).
+`dev` runs a single task, so it has no high availability. `prod` runs two tasks across
+two AZs, giving it multi-AZ availability and a rolling, zero-downtime deploy, but neither
+environment autoscales, and HTTP and public subnets remain. These are decisions with
+reasons, not oversights, see [limitations](limitations.md) and
+[design decisions](design-decisions.md).

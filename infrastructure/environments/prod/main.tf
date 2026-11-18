@@ -107,8 +107,9 @@ module "monitoring" {
   cluster_name = local.ecs_cluster_name
   service_name = local.ecs_service_name
 
-  alarm_email = var.alarm_email
-  tags        = var.extra_tags
+  alarm_email   = var.alarm_email
+  desired_count = var.desired_count
+  tags          = var.extra_tags
 }
 
 # -----------------------------------------------------------------------------
@@ -133,11 +134,13 @@ module "alb" {
 # -----------------------------------------------------------------------------
 # Compute
 #
-# One Fargate task in a public subnet (ADR-002, ADR-005). Not highly available:
-# a single task is a single point of failure.
+# Two Fargate tasks spread across the two Availability Zones (multi-AZ for prod
+# only; dev remains a single task). The service spreads tasks across AZs via an
+# ordered placement strategy, so one AZ or task can fail without taking the
+# service down.
 #
-# Cost: ~$9/month for 0.25 vCPU / 0.5 GB if left running continuously, plus
-# public IPv4 charges for the task ENI.
+# Cost: ~$18/month for 2 x 0.25 vCPU / 0.5 GB if left running continuously, plus
+# public IPv4 charges for the task ENIs.
 # -----------------------------------------------------------------------------
 module "ecs" {
   source = "../../modules/ecs"

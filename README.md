@@ -12,7 +12,7 @@ has something real to deploy, monitor, break and roll back.
 > The stack was destroyed at the end of validation to stop the AWS bill. There is
 > nothing running right now, so the load balancer URLs no longer resolve.
 > Every claim below is backed by captured evidence in [docs/acceptance.md](docs/acceptance.md)
->, screenshots of the pipeline, the running service and the teardown.
+> , screenshots of the pipeline, the running service and the teardown.
 > To bring it back up, follow [docs/runbooks/deployment.md](docs/runbooks/deployment.md).
 > It takes about ten minutes.
 
@@ -22,7 +22,7 @@ has something real to deploy, monitor, break and roll back.
 
 | If you want to…                                     | Go to                                                                                      |
 | --------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| See it working without paying for AWS               | [docs/acceptance.md](docs/acceptance.md), screenshots + recorded API responses            |
+| See it working without paying for AWS               | [docs/acceptance.md](docs/acceptance.md), screenshots + recorded API responses             |
 | Understand the design in five minutes               | [docs/architecture.md](docs/architecture.md)                                               |
 | Know _why_ it is built this way                     | [docs/design-decisions.md](docs/design-decisions.md)                                       |
 | Redeploy it from scratch                            | [docs/runbooks/deployment.md](docs/runbooks/deployment.md)                                 |
@@ -37,7 +37,7 @@ has something real to deploy, monitor, break and roll back.
 
 | Path                                       | Contents                                                                            |
 | ------------------------------------------ | ----------------------------------------------------------------------------------- |
-| [`app/`](app/)                             | The Node service, Express 5, ESM, 34 tests, multi-stage Dockerfile                 |
+| [`app/`](app/)                             | The Node service, Express 5, ESM, 34 tests, multi-stage Dockerfile                  |
 | [`infrastructure/`](infrastructure/)       | Terraform: `bootstrap/`, `ci/`, reusable `modules/`, and `environments/{dev,prod}`  |
 | [`.github/workflows/`](.github/workflows/) | `application.yml` (build → scan → deploy) and `infrastructure.yml` (fmt + validate) |
 | [`docs/`](docs/)                           | Architecture, decisions, runbooks, evidence                                         |
@@ -93,13 +93,13 @@ Full detail, component inventory, request flow, failure modes, network layout, i
 The service exposes six routes. Two exist purely so a reviewer can inspect it without
 reading code.
 
-| Method | Path            | Purpose                                                              |
-| ------ | --------------- | -------------------------------------------------------------------- |
+| Method | Path            | Purpose                                                             |
+| ------ | --------------- | ------------------------------------------------------------------- |
 | `GET`  | `/docs`         | **Swagger UI**: interactive reference, click _Try it out_           |
-| `GET`  | `/openapi.json` | The OpenAPI 3.0.3 document behind it                                 |
+| `GET`  | `/openapi.json` | The OpenAPI 3.0.3 document behind it                                |
 | `GET`  | `/api/status`   | Runtime status, returns the **Git SHA the image was built from**    |
-| `GET`  | `/health`       | ALB and container health check; `503` once draining                  |
-| `GET`  | `/`             | Service name, environment, version                                   |
+| `GET`  | `/health`       | ALB and container health check; `503` once draining                 |
+| `GET`  | `/`             | Service name, environment, version                                  |
 | `POST` | `/api/echo`     | Validates and echoes a message, exercises parsing and error mapping |
 
 `/api/status` is the one worth understanding. The pipeline reads `commitSha` back after
@@ -169,14 +169,14 @@ section.
 | Control                           | State                                                                    |
 | --------------------------------- | ------------------------------------------------------------------------ |
 | Long-lived AWS credentials in CI  | **None.** OIDC federation only                                           |
-| Container runs as non-root        | Yes, uid 1000, `USER node`                                              |
+| Container runs as non-root        | Yes, uid 1000, `USER node`                                               |
 | Package managers in runtime image | **Removed.** `npm`, `npx`, `corepack` deleted after install              |
 | Base image patched                | `apk upgrade --no-cache` in build; removed 7 HIGH/CRITICAL findings      |
 | Vulnerability gate                | Trivy blocks on HIGH/CRITICAL (`ignore-unfixed`)                         |
 | Image tags mutable                | **No.** ECR repository is `IMMUTABLE`                                    |
 | State encrypted and private       | SSE-S3, public access blocked, TLS-only bucket policy                    |
-| Operator identity                 | Dedicated IAM user with MFA, **not** root; enforced by a precondition   |
-| Traffic encrypted in transit      | **No.** HTTP only, no domain, so no ACM certificate                     |
+| Operator identity                 | Dedicated IAM user with MFA, **not** root; enforced by a precondition    |
+| Traffic encrypted in transit      | **No.** HTTP only, no domain, so no ACM certificate                      |
 | Tasks in private subnets          | **No.** Public subnets with public IPs; no NAT Gateway, by cost decision |
 
 The last two rows are the honest ones. Both are deliberate and both are argued in
@@ -187,13 +187,13 @@ production review without a domain and a NAT Gateway.
 
 ## Cost
 
-The two environments cost roughly **$50-$60 per month** while running. The ALB hourly
-charge dominates; Fargate at 0.25 vCPU is a few dollars.
+The two environments cost roughly **$65 per month** while running. The ALB hourly
+charge dominates; Fargate at 0.25 vCPU is a few dollars per task.
 
 | Item                                      | Approx. monthly |
 | ----------------------------------------- | --------------- |
 | 2 × Application Load Balancer             | ~$36            |
-| 2 × Fargate task (0.25 vCPU / 512 MB)     | ~$18            |
+| 3 × Fargate task (0.25 vCPU / 512 MB)     | ~$27            |
 | ECR storage, CloudWatch logs, alarms, SNS | ~$2             |
 | **Currently running: nothing**            | **$0**          |
 
@@ -210,8 +210,8 @@ document could do. Known gaps, with reasoning and proposed next steps, are colle
 [docs/limitations.md](docs/limitations.md). The headline items:
 
 - **HTTP only**: no TLS, because no domain was available
-- **A single task**: one Fargate task per environment, so there is no high availability
-  and no zero-downtime deployment, despite the ALB spanning two AZs
+- **No autoscaling**: `prod` runs two tasks across two AZs (multi-AZ), but `dev` remains
+  a single task and neither environment scales with load
 - **Public subnets**: tasks have public IPs and unrestricted egress
 - **No autoscaling, no WAF, no rate limiting**
 

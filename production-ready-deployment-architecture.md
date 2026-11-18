@@ -11,7 +11,7 @@
 **CI/CD:** GitHub Actions\
 **Container platform:** Amazon ECS on AWS Fargate
 
-------------------------------------------------------------------------
+---
 
 ## 1. Executive summary
 
@@ -67,106 +67,110 @@ not required by the application or assessment objectives.
 
 The solution is considered complete when:
 
--   A reviewer can follow the README to understand the architecture and
-    prerequisites.
--   Terraform can create the required infrastructure from a clean,
-    documented starting point.
--   A pull request triggers validation and tests without deploying
-    application changes.
--   A change merged to the deployment branch builds and tags a Docker
-    image using the Git commit SHA.
--   The pipeline pushes the image to ECR and updates the ECS service.
--   The pipeline waits for ECS service stability and verifies the
-    deployed health endpoint.
--   The application is reachable through the ALB DNS endpoint.
--   Application logs are visible in CloudWatch.
--   A failed test or build prevents deployment.
--   The repository contains no credentials, Terraform state, or other
-    secrets.
--   The infrastructure can be destroyed using documented commands.
+- A reviewer can follow the README to understand the architecture and
+  prerequisites.
+- Terraform can create the required infrastructure from a clean,
+  documented starting point.
+- A pull request triggers validation and tests without deploying
+  application changes.
+- A change merged to the deployment branch builds and tags a Docker
+  image using the Git commit SHA.
+- The pipeline pushes the image to ECR and updates the ECS service.
+- The pipeline waits for ECS service stability and verifies the
+  deployed health endpoint.
+- The application is reachable through the ALB DNS endpoint.
+- Application logs are visible in CloudWatch.
+- A failed test or build prevents deployment.
+- The repository contains no credentials, Terraform state, or other
+  secrets.
+- The infrastructure can be destroyed using documented commands.
 
 ## 3. Scope
 
 ### 3.1 In scope
 
--   A small stateless Node.js / Express HTTP API.
--   Docker image build and local test workflow.
--   Terraform-managed AWS networking and application infrastructure.
--   Amazon ECR image repository.
--   ECS cluster, task definition, and Fargate service.
--   Application Load Balancer, listener, and target group.
--   IAM roles for ECS task execution, application runtime, and GitHub
-    Actions deployment.
--   GitHub OIDC federation.
--   GitHub Actions CI and deployment workflows.
--   CloudWatch log group, application logs, and basic alarms.
--   S3 remote Terraform state backend.
--   Architecture diagrams and operational documentation.
+- A small stateless Node.js / Express HTTP API.
+- Docker image build and local test workflow.
+- Terraform-managed AWS networking and application infrastructure.
+- Amazon ECR image repository.
+- ECS cluster, task definition, and Fargate service.
+- Application Load Balancer, listener, and target group.
+- IAM roles for ECS task execution, application runtime, and GitHub
+  Actions deployment.
+- GitHub OIDC federation.
+- GitHub Actions CI and deployment workflows.
+- CloudWatch log group, application logs, and basic alarms.
+- S3 remote Terraform state backend.
+- Architecture diagrams and operational documentation.
 
 ### 3.2 Out of scope
 
--   Kubernetes / Amazon EKS.
--   Persistent application database.
--   Multi-region active-active or disaster recovery.
--   Service mesh.
--   API Gateway.
--   Advanced autoscaling policies unless time and cost permit.
--   Web Application Firewall (WAF).
--   Centralized security information and event management (SIEM).
--   Full production certificate and DNS configuration, because no domain
-    is currently available.
--   Blue/green deployment using a separate deployment controller.
+- Kubernetes / Amazon EKS.
+- Persistent application database.
+- Multi-region active-active or disaster recovery.
+- Service mesh.
+- API Gateway.
+- Advanced autoscaling policies unless time and cost permit.
+- Web Application Firewall (WAF).
+- Centralized security information and event management (SIEM).
+- Full production certificate and DNS configuration, because no domain
+  is currently available.
+- Blue/green deployment using a separate deployment controller.
 
 These exclusions are deliberate scope decisions. They can be revisited
 if application requirements change.
 
 ## 4. Assumptions and constraints
 
-  -----------------------------------------------------------------------
-  Area                                Assumption or constraint
-  ----------------------------------- -----------------------------------
-  Cloud account                       The project will use the user's AWS
-                                      account.
+---
 
-  Region                              One AWS region will be selected and
-                                      used consistently.
+Area Assumption or constraint
 
-  Application                         The service is stateless and does
-                                      not require persistent storage.
+---
 
-  Runtime                             A supported Node.js LTS release
-                                      will be selected and pinned.
+Cloud account The project will use the user's AWS
+account.
 
-  Port                                The application listens on TCP port
-                                      3000 inside the container.
+Region One AWS region will be selected and
+used consistently.
 
-  Health endpoint                     `GET /health` returns HTTP 200 when
-                                      the process is ready to receive
-                                      traffic.
+Application The service is stateless and does
+not require persistent storage.
 
-  Domain                              No domain name is available for the
-                                      assessment.
+Runtime A supported Node.js LTS release
+will be selected and pinned.
 
-  Initial protocol                    HTTP through the ALB-generated DNS
-                                      name.
+Port The application listens on TCP port
+3000 inside the container.
 
-  Availability                        Two AZs are used for the VPC and
-                                      ALB; initial task count is one
-                                      unless budget permits two.
+Health endpoint `GET /health` returns HTTP 200 when
+the process is ready to receive
+traffic.
 
-  Budget                              Avoid NAT Gateway and unnecessary
-                                      always-on services.
+Domain No domain name is available for the
+assessment.
 
-  CI/CD                               GitHub Actions is acceptable under
-                                      the assessment instructions.
+Initial protocol HTTP through the ALB-generated DNS
+name.
 
-  Infrastructure state                Terraform state is stored remotely
-                                      in S3 after a one-time bootstrap.
+Availability Two AZs are used for the VPC and
+ALB; initial task count is one
+unless budget permits two.
 
-  Access                              Local infrastructure administration
-                                      and CI deployment use separate
-                                      identities.
-  -----------------------------------------------------------------------
+Budget Avoid NAT Gateway and unnecessary
+always-on services.
+
+CI/CD GitHub Actions is acceptable under
+the assessment instructions.
+
+Infrastructure state Terraform state is stored remotely
+in S3 after a one-time bootstrap.
+
+Access Local infrastructure administration
+and CI deployment use separate
+identities.
+
+---
 
 ### 4.1 Important availability qualification
 
@@ -184,7 +188,7 @@ highly available.
 
 ### 5.1 Logical component diagram
 
-``` mermaid
+```mermaid
 flowchart TB
     USER["Application users"] -->|"HTTP :80"| ALB["Application Load Balancer"]
 
@@ -221,62 +225,66 @@ flowchart TB
 
 ### 5.2 Component responsibilities
 
-  -----------------------------------------------------------------------
-  Component                           Responsibility
-  ----------------------------------- -----------------------------------
-  GitHub repository                   Source code, tests, Dockerfile,
-                                      Terraform, workflows, documentation
+---
 
-  GitHub Actions                      Validate, test, build, scan,
-                                      publish, and deploy
+Component Responsibility
 
-  GitHub OIDC provider                Establish trusted identity
-                                      federation from GitHub to AWS
+---
 
-  GitHub deployment IAM role          Allow only the AWS actions required
-                                      by the deployment workflow
+GitHub repository Source code, tests, Dockerfile,
+Terraform, workflows, documentation
 
-  Amazon ECR                          Store application container images
+GitHub Actions Validate, test, build, scan,
+publish, and deploy
 
-  VPC                                 Provide an isolated network
-                                      boundary
+GitHub OIDC provider Establish trusted identity
+federation from GitHub to AWS
 
-  Public subnets                      Host the internet-facing ALB and,
-                                      in the cost-conscious assessment
-                                      design, Fargate task ENIs
+GitHub deployment IAM role Allow only the AWS actions required
+by the deployment workflow
 
-  Internet Gateway                    Provide internet routing for public
-                                      subnet resources
+Amazon ECR Store application container images
 
-  Application Load Balancer           Accept inbound application traffic
-                                      and route it to healthy ECS targets
+VPC Provide an isolated network
+boundary
 
-  ECS cluster                         Logical grouping for ECS services
-                                      and tasks
+Public subnets Host the internet-facing ALB and,
+in the cost-conscious assessment
+design, Fargate task ENIs
 
-  ECS task definition                 Declare image, CPU, memory, port
-                                      mapping, logging, and runtime
-                                      configuration
+Internet Gateway Provide internet routing for public
+subnet resources
 
-  ECS service                         Maintain the configured desired
-                                      number of tasks and manage
-                                      deployments
+Application Load Balancer Accept inbound application traffic
+and route it to healthy ECS targets
 
-  Fargate                             Run containers without managing EC2
-                                      worker instances
+ECS cluster Logical grouping for ECS services
+and tasks
 
-  ECS task execution role             Allow ECS/Fargate to pull images
-                                      and publish logs
+ECS task definition Declare image, CPU, memory, port
+mapping, logging, and runtime
+configuration
 
-  ECS task role                       Provide application-specific AWS
-                                      permissions; initially no
-                                      additional permissions are expected
+ECS service Maintain the configured desired
+number of tasks and manage
+deployments
 
-  CloudWatch                          Store logs, expose metrics, and
-                                      evaluate alarms
+Fargate Run containers without managing EC2
+worker instances
 
-  S3 Terraform backend                Store Terraform state remotely
-  -----------------------------------------------------------------------
+ECS task execution role Allow ECS/Fargate to pull images
+and publish logs
+
+ECS task role Provide application-specific AWS
+permissions; initially no
+additional permissions are expected
+
+CloudWatch Store logs, expose metrics, and
+evaluate alarms
+
+S3 Terraform backend Store Terraform state remotely
+
+---
 
 ## 6. AWS network architecture
 
@@ -291,7 +299,7 @@ will ensure that application traffic is accepted only from the ALB
 security group. Tasks will not expose the application port directly to
 arbitrary internet sources.
 
-``` mermaid
+```mermaid
 flowchart TB
     INTERNET["Internet"]
     IGW["Internet Gateway"]
@@ -334,19 +342,19 @@ application port only from the ALB security group.
 
 Benefits:
 
--   Avoids the hourly and data-processing charges of a NAT Gateway.
--   Avoids the hourly charges of multiple interface VPC endpoints.
--   Allows Fargate tasks to reach ECR and CloudWatch over public AWS
-    service endpoints.
--   Reduces networking components and setup time.
+- Avoids the hourly and data-processing charges of a NAT Gateway.
+- Avoids the hourly charges of multiple interface VPC endpoints.
+- Allows Fargate tasks to reach ECR and CloudWatch over public AWS
+  service endpoints.
+- Reduces networking components and setup time.
 
 Costs and risks:
 
--   Task ENIs have public IP addresses.
--   The task relies on security-group rules to restrict inbound access.
--   Outbound connectivity is not restricted to AWS service endpoints by
-    default.
--   This is less isolated than private-subnet compute.
+- Task ENIs have public IP addresses.
+- The task relies on security-group rules to restrict inbound access.
+- Outbound connectivity is not restricted to AWS service endpoints by
+  default.
+- This is less isolated than private-subnet compute.
 
 A public IP does not mean the application port must be publicly
 reachable. The task security group must allow inbound TCP port 3000 only
@@ -360,27 +368,31 @@ Logs connectivity against the workload's actual needs.
 
 ### 6.3 Security group rules
 
-  --------------------------------------------------------------------------
-  Security group Direction      Protocol /     Source /       Purpose
-                                port           destination    
-  -------------- -------------- -------------- -------------- --------------
-  ALB security   Inbound        TCP 80         `0.0.0.0/0`    Assessment
-  group                                                       HTTP access
+---
 
-  ALB security   Outbound       TCP 3000       ECS task       Forward
-  group                                        security group traffic to
-                                                              application
+Security group Direction Protocol / Source / Purpose
+port destination
 
-  ECS task       Inbound        TCP 3000       ALB security   Accept traffic
-  security group                               group          only from ALB
+---
 
-  ECS task       Outbound       Required       As required    Outbound
-  security group                egress         for image      service access
-                                               pulls, logs,   
-                                               and            
-                                               application    
-                                               operation      
-  --------------------------------------------------------------------------
+ALB security Inbound TCP 80 `0.0.0.0/0` Assessment
+group HTTP access
+
+ALB security Outbound TCP 3000 ECS task Forward
+group security group traffic to
+application
+
+ECS task Inbound TCP 3000 ALB security Accept traffic
+security group group only from ALB
+
+ECS task Outbound Required As required Outbound
+security group egress for image service access
+pulls, logs,  
+ and  
+ application  
+ operation
+
+---
 
 Security group references should be used instead of broad CIDR rules for
 ALB-to-task traffic. The ALB security group should not allow arbitrary
@@ -392,17 +404,17 @@ access is restricted if the implementation uses unrestricted egress.
 
 ### 6.4 Load balancer configuration
 
--   Scheme: internet-facing.
--   Subnets: both public subnets.
--   Listener: HTTP on port 80 for the assessment.
--   Target type: `ip`, as required for Fargate task networking.
--   Target port: 3000.
--   Health check path: `/health`.
--   Success matcher: HTTP 200.
--   Health check interval and thresholds: choose sensible values and
-    document them.
--   Deregistration delay: retain a sensible default unless the
-    application requires a different value.
+- Scheme: internet-facing.
+- Subnets: both public subnets.
+- Listener: HTTP on port 80 for the assessment.
+- Target type: `ip`, as required for Fargate task networking.
+- Target port: 3000.
+- Health check path: `/health`.
+- Success matcher: HTTP 200.
+- Health check interval and thresholds: choose sensible values and
+  document them.
+- Deregistration delay: retain a sensible default unless the
+  application requires a different value.
 
 The ALB should route only to healthy targets. The application must bind
 to `0.0.0.0`, not only `localhost`, inside the container.
@@ -418,25 +430,29 @@ DevOps implementation.
 
 ### 7.2 Proposed endpoints
 
-  -----------------------------------------------------------------------
-  Endpoint          Method            Purpose           Expected behavior
-  ----------------- ----------------- ----------------- -----------------
-  `/`               GET               Basic service     Returns service
-                                      information       name and a short
-                                                        message
+---
 
-  `/health`         GET               Load balancer and Returns HTTP 200
-                                      container health  when ready
-                                      check             
+Endpoint Method Purpose Expected behavior
 
-  `/api/status`     GET               Runtime status    Returns a small
-                                                        JSON status
-                                                        payload
-  -----------------------------------------------------------------------
+---
+
+`/` GET Basic service Returns service
+information name and a short
+message
+
+`/health` GET Load balancer and Returns HTTP 200
+container health when ready
+check
+
+`/api/status` GET Runtime status Returns a small
+JSON status
+payload
+
+---
 
 Example health response:
 
-``` json
+```json
 {
   "status": "ok"
 }
@@ -448,30 +464,30 @@ readiness and liveness checks should be reconsidered separately.
 
 ### 7.3 Container requirements
 
--   Use a supported Node.js LTS base image and pin an appropriate
-    version.
--   Use a multi-stage build if it provides a meaningful reduction in
-    runtime image size.
--   Run as a non-root user.
--   Use a `.dockerignore` file.
--   Install dependencies reproducibly using the lockfile and `npm ci`.
--   Do not copy local secrets or development artifacts into the image.
--   Expose/document port 3000.
--   Handle `SIGTERM` and shut down gracefully.
--   Write logs to standard output and standard error so the ECS
-    `awslogs` driver can collect them.
--   Do not bake environment-specific configuration or credentials into
-    the image.
+- Use a supported Node.js LTS base image and pin an appropriate
+  version.
+- Use a multi-stage build if it provides a meaningful reduction in
+  runtime image size.
+- Run as a non-root user.
+- Use a `.dockerignore` file.
+- Install dependencies reproducibly using the lockfile and `npm ci`.
+- Do not copy local secrets or development artifacts into the image.
+- Expose/document port 3000.
+- Handle `SIGTERM` and shut down gracefully.
+- Write logs to standard output and standard error so the ECS
+  `awslogs` driver can collect them.
+- Do not bake environment-specific configuration or credentials into
+  the image.
 
 ### 7.4 Health checks
 
 Use both an ECS container health check and an ALB target-group health
 check where appropriate.
 
--   **Container health check:** verifies that the process inside the
-    container responds locally.
--   **ALB health check:** verifies that the service is reachable through
-    the task network interface.
+- **Container health check:** verifies that the process inside the
+  container responds locally.
+- **ALB health check:** verifies that the service is reachable through
+  the task network interface.
 
 These checks cover different failure boundaries. They should not be
 treated as interchangeable.
@@ -493,7 +509,7 @@ have different review and rollback characteristics.
 
 ### 8.2 Application workflow
 
-``` mermaid
+```mermaid
 flowchart TD
     START["Push or Pull Request"] --> TEST["Install dependencies and run tests"]
     TEST --> BUILD["Build Docker image"]
@@ -513,15 +529,15 @@ flowchart TD
 
 Proposed policy:
 
--   Pull requests: run tests, Docker build validation, and relevant
-    static checks. Do not deploy.
--   Pushes to the deployment branch (for example, `main`): run the full
-    application pipeline and deploy after all checks pass.
--   Terraform changes: use a separate workflow. Run `fmt`, `init`,
-    `validate`, and `plan` on pull requests. Apply only after an
-    explicit review/approval process on the protected deployment branch.
--   Use GitHub environment protection for deployment approval if
-    available and appropriate for the assessment.
+- Pull requests: run tests, Docker build validation, and relevant
+  static checks. Do not deploy.
+- Pushes to the deployment branch (for example, `main`): run the full
+  application pipeline and deploy after all checks pass.
+- Terraform changes: use a separate workflow. Run `fmt`, `init`,
+  `validate`, and `plan` on pull requests. Apply only after an
+  explicit review/approval process on the protected deployment branch.
+- Use GitHub environment protection for deployment approval if
+  available and appropriate for the assessment.
 
 ### 8.4 Image versioning
 
@@ -540,16 +556,16 @@ reference.
 
 ### 8.5 Deployment behavior and rollback
 
--   Register a new ECS task definition revision that references the
-    immutable image tag.
--   Update the ECS service to use the new revision.
--   Wait for the service to reach a stable state.
--   Verify the ALB endpoint and health response.
--   Enable the ECS deployment circuit breaker with rollback where
-    supported by the selected deployment configuration.
--   Preserve prior task definition revisions so a known-good version can
-    be redeployed.
--   Treat a failed health verification as a failed pipeline run.
+- Register a new ECS task definition revision that references the
+  immutable image tag.
+- Update the ECS service to use the new revision.
+- Wait for the service to reach a stable state.
+- Verify the ALB endpoint and health response.
+- Enable the ECS deployment circuit breaker with rollback where
+  supported by the selected deployment configuration.
+- Preserve prior task definition revisions so a known-good version can
+  be redeployed.
+- Treat a failed health verification as a failed pipeline run.
 
 The ECS deployment circuit breaker is not a substitute for
 application-level testing. It detects deployment health problems through
@@ -562,28 +578,32 @@ verify the application endpoint.
 
 Use separate identities for separate responsibilities.
 
-  -----------------------------------------------------------------------
-  Identity                Used by                 Responsibility
-  ----------------------- ----------------------- -----------------------
-  Human administrator     Authorized operator     Initial account setup
-                                                  and controlled
-                                                  infrastructure
-                                                  administration
+---
 
-  Terraform execution     Local operator or       Create, update, and
-  identity                approved infrastructure destroy project
-                          workflow                infrastructure
+Identity Used by Responsibility
 
-  GitHub Actions          GitHub workflow through Publish images and
-  deployment role         OIDC                    update the ECS service
+---
 
-  ECS task execution role ECS/Fargate agent       Pull ECR images and
-                                                  publish CloudWatch logs
+Human administrator Authorized operator Initial account setup
+and controlled
+infrastructure
+administration
 
-  ECS task role           Application container   Application access to
-                                                  AWS APIs, if later
-                                                  required
-  -----------------------------------------------------------------------
+Terraform execution Local operator or Create, update, and
+identity approved infrastructure destroy project
+workflow infrastructure
+
+GitHub Actions GitHub workflow through Publish images and
+deployment role OIDC update the ECS service
+
+ECS task execution role ECS/Fargate agent Pull ECR images and
+publish CloudWatch logs
+
+ECS task role Application container Application access to
+AWS APIs, if later
+required
+
+---
 
 Do not use the account root user for routine work. Protect privileged
 human identities with MFA. Avoid using a permanent IAM user's long-lived
@@ -596,10 +616,10 @@ provider.
 
 The role trust policy should restrict:
 
--   The expected GitHub organization or user.
--   The exact repository.
--   The intended branch or GitHub Environment subject.
--   The `aud` claim to `sts.amazonaws.com`.
+- The expected GitHub organization or user.
+- The exact repository.
+- The intended branch or GitHub Environment subject.
+- The `aud` claim to `sts.amazonaws.com`.
 
 Do not use a wildcard trust policy that allows arbitrary repositories or
 branches to assume the deployment role.
@@ -608,13 +628,13 @@ branches to assume the deployment role.
 
 The GitHub deployment role should have only the permissions required to:
 
--   Authenticate to the intended ECR repository.
--   Upload image layers and image manifests.
--   Register the required ECS task definition revision.
--   Update and describe the intended ECS service and cluster.
--   Describe tasks and deployments to wait for stability.
--   Pass only the specific ECS task execution role and task role, using
-    a narrowly scoped `iam:PassRole` permission.
+- Authenticate to the intended ECR repository.
+- Upload image layers and image manifests.
+- Register the required ECS task definition revision.
+- Update and describe the intended ECS service and cluster.
+- Describe tasks and deployments to wait for stability.
+- Pass only the specific ECS task execution role and task role, using
+  a narrowly scoped `iam:PassRole` permission.
 
 The deployment workflow should not have broad administrator permissions.
 Separate infrastructure provisioning permissions from application
@@ -629,7 +649,7 @@ remain minimally privileged.
 
 ### 10.1 Repository layout
 
-``` text
+```text
 production-ready-deployment/
 ├── app/
 │   ├── src/
@@ -687,30 +707,34 @@ variables and outputs.
 
 ### 10.2 Module responsibilities
 
-  -----------------------------------------------------------------------
-  Module                  Owns                    Important outputs
-  ----------------------- ----------------------- -----------------------
-  `networking`            VPC, subnets, internet  VPC ID, subnet IDs
-                          gateway, route tables   
+---
 
-  `security`              ALB and task security   Security group IDs,
-                          groups, IAM roles and   role ARNs
-                          policies where          
-                          appropriate             
+Module Owns Important outputs
 
-  `ecr`                   ECR repository, image   Repository URL and ARN
-                          retention/lifecycle     
-                          configuration           
+---
 
-  `alb`                   ALB, target group,      ALB DNS name, target
-                          listener                group ARN
+`networking` VPC, subnets, internet VPC ID, subnet IDs
+gateway, route tables
 
-  `ecs`                   ECS cluster, task       Cluster name/ARN,
-                          definition, service     service name
+`security` ALB and task security Security group IDs,
+groups, IAM roles and role ARNs
+policies where  
+ appropriate
 
-  `monitoring`            Log group, alarms,      Log group name, alarm
-                          dashboards if used      identifiers
-  -----------------------------------------------------------------------
+`ecr` ECR repository, image Repository URL and ARN
+retention/lifecycle  
+ configuration
+
+`alb` ALB, target group, ALB DNS name, target
+listener group ARN
+
+`ecs` ECS cluster, task Cluster name/ARN,
+definition, service service name
+
+`monitoring` Log group, alarms, Log group name, alarm
+dashboards if used identifiers
+
+---
 
 IAM resources may be separated further if that improves clarity. Avoid
 circular module dependencies. Keep the environment root module
@@ -722,15 +746,15 @@ Use an S3 backend for Terraform state.
 
 Recommended controls:
 
--   S3 bucket with versioning enabled.
--   Server-side encryption.
--   Public access blocked.
--   Bucket policy restricted to the Terraform operators/workflows.
--   State locking using Terraform's S3 backend `use_lockfile`
-    capability, supported by a compatible Terraform version.
--   No state files committed to Git.
--   No secrets placed in Terraform outputs or state unless absolutely
-    unavoidable.
+- S3 bucket with versioning enabled.
+- Server-side encryption.
+- Public access blocked.
+- Bucket policy restricted to the Terraform operators/workflows.
+- State locking using Terraform's S3 backend `use_lockfile`
+  capability, supported by a compatible Terraform version.
+- No state files committed to Git.
+- No secrets placed in Terraform outputs or state unless absolutely
+  unavoidable.
 
 The backend bucket must exist before the environment can initialize
 against it. A small bootstrap stage will create it. Bootstrap
@@ -757,37 +781,41 @@ safe example files without credentials.
 
 Configure the ECS task definition to use the `awslogs` log driver.
 
--   Create a dedicated CloudWatch log group for the application.
--   Use a clear naming convention, such as
-    `/ecs/<project>/<environment>`.
--   Set log retention to seven days for the assessment.
--   Write application logs to stdout/stderr.
--   Prefer structured JSON logs with timestamp, severity, message, and
-    request identifier where practical.
--   Do not log passwords, tokens, authorization headers, or sensitive
-    personal data.
+- Create a dedicated CloudWatch log group for the application.
+- Use a clear naming convention, such as
+  `/ecs/<project>/<environment>`.
+- Set log retention to seven days for the assessment.
+- Write application logs to stdout/stderr.
+- Prefer structured JSON logs with timestamp, severity, message, and
+  request identifier where practical.
+- Do not log passwords, tokens, authorization headers, or sensitive
+  personal data.
 
 ### 11.2 Metrics and alarms
 
 Proposed baseline:
 
-  -----------------------------------------------------------------------
-  Signal                  Source                  Purpose
-  ----------------------- ----------------------- -----------------------
-  ECS CPU utilization     ECS / CloudWatch        Detect sustained CPU
-                                                  pressure
+---
 
-  ECS memory utilization  ECS / CloudWatch        Detect memory pressure
+Signal Source Purpose
 
-  ALB HTTP 5xx count or   ALB / CloudWatch        Detect application or
-  rate                                            target errors
+---
 
-  Healthy host count      ALB / CloudWatch        Detect loss of healthy
-                                                  targets
+ECS CPU utilization ECS / CloudWatch Detect sustained CPU
+pressure
 
-  Running task count      ECS service /           Detect service capacity
-                          CloudWatch              shortfall
-  -----------------------------------------------------------------------
+ECS memory utilization ECS / CloudWatch Detect memory pressure
+
+ALB HTTP 5xx count or ALB / CloudWatch Detect application or
+rate target errors
+
+Healthy host count ALB / CloudWatch Detect loss of healthy
+targets
+
+Running task count ECS service / Detect service capacity
+CloudWatch shortfall
+
+---
 
 At least one or two meaningful alarms should be implemented within the
 assessment scope. Alarm thresholds should be documented as initial
@@ -799,13 +827,13 @@ destination must be verified.
 
 After deployment, verify:
 
--   ECS service has the expected running task count.
--   Tasks are healthy and using the expected task definition revision.
--   ALB target group reports healthy targets.
--   `/health` returns HTTP 200 through the ALB DNS endpoint.
--   Application logs appear in the expected CloudWatch log group.
--   The deployed image tag matches the Git commit SHA.
--   No unexpected public inbound security group rules exist.
+- ECS service has the expected running task count.
+- Tasks are healthy and using the expected task definition revision.
+- ALB target group reports healthy targets.
+- `/health` returns HTTP 200 through the ALB DNS endpoint.
+- Application logs appear in the expected CloudWatch log group.
+- The deployed image tag matches the Git commit SHA.
+- No unexpected public inbound security group rules exist.
 
 ## 12. Security considerations
 
@@ -843,54 +871,58 @@ HTTP to HTTPS.
 
 ## 13. Trade-off analysis
 
-  -------------------------------------------------------------------------------------------
-  Decision        Selected        Benefit              Cost /           Revisit when
-                  approach                             limitation       
-  --------------- --------------- -------------------- ---------------- ---------------------
-  Compute         ECS Fargate     Managed container    Less host-level  Workload requires
-                                  runtime, no EC2 host control; task    Kubernetes or host
-                                  management           runtime cost     customization
+---
 
-  Orchestration   ECS rather than Lower operational    No Kubernetes    Kubernetes-specific
-                  EKS             overhead             API/ecosystem    requirements exist
+Decision Selected Benefit Cost / Revisit when
+approach limitation
 
-  CI/CD           GitHub Actions  Native GitHub        Less control     Jenkins is explicitly
-                                  integration, no      over runner      required or
-                                  Jenkins server       infrastructure   self-hosted execution
-                                                                        is needed
+---
 
-  Registry        ECR             Native ECS/IAM       Storage and      Cross-cloud or
-                                  integration          transfer charges registry portability
-                                                                        becomes a priority
+Compute ECS Fargate Managed container Less host-level Workload requires
+runtime, no EC2 host control; task Kubernetes or host
+management runtime cost customization
 
-  Network         Public-subnet   Avoids NAT Gateway   Public IPs and   Workload handles
-  placement       tasks           and endpoint charges broader egress   sensitive data or
-                                                       path             needs stronger
-                                                                        isolation
+Orchestration ECS rather than Lower operational No Kubernetes Kubernetes-specific
+EKS overhead API/ecosystem requirements exist
 
-  Availability    Two-AZ VPC/ALB; Multi-AZ foundation  One task is a    Service requires
-                  one initial     with lower initial   single point of  stronger availability
-                  task            compute cost         failure          
+CI/CD GitHub Actions Native GitHub Less control Jenkins is explicitly
+integration, no over runner required or
+Jenkins server infrastructure self-hosted execution
+is needed
 
-  Ingress         ALB             Health-based routing Hourly and       Requirements change
-                                  and stable endpoint  capacity charges to API Gateway or
-                                                                        another ingress
+Registry ECR Native ECS/IAM Storage and Cross-cloud or
+integration transfer charges registry portability
+becomes a priority
 
-  Protocol        HTTP initially  No                   No TLS           Domain and ACM
-                                  domain/certificate   encryption       certificate are
-                                  prerequisite                          available
+Network Public-subnet Avoids NAT Gateway Public IPs and Workload handles
+placement tasks and endpoint charges broader egress sensitive data or
+path needs stronger
+isolation
 
-  Monitoring      CloudWatch      Native AWS           Ingestion,       Advanced
-                                  integration          retention, and   observability
-                                                       alarm costs      requirements emerge
+Availability Two-AZ VPC/ALB; Multi-AZ foundation One task is a Service requires
+one initial with lower initial single point of stronger availability
+task compute cost failure
 
-  State           S3 backend with Durable remote state Bootstrap and    Not expected to
-                  lockfile        and locking          access policy    change for this
-                                                       required         project
+Ingress ALB Health-based routing Hourly and Requirements change
+and stable endpoint capacity charges to API Gateway or
+another ingress
 
-  Image tagging   Git SHA         Traceability and     More image tags  Retention policy
-                                  rollback             to manage        needs adjustment
-  -------------------------------------------------------------------------------------------
+Protocol HTTP initially No No TLS Domain and ACM
+domain/certificate encryption certificate are
+prerequisite available
+
+Monitoring CloudWatch Native AWS Ingestion, Advanced
+integration retention, and observability
+alarm costs requirements emerge
+
+State S3 backend with Durable remote state Bootstrap and Not expected to
+lockfile and locking access policy change for this
+required project
+
+Image tagging Git SHA Traceability and More image tags Retention policy
+rollback to manage needs adjustment
+
+---
 
 ## 14. Cost management
 
@@ -898,13 +930,13 @@ HTTP to HTTPS.
 
 The primary cost contributors are expected to be:
 
--   Application Load Balancer hourly and capacity charges.
--   Fargate vCPU and memory runtime.
--   Public IPv4 address charges.
--   ECR image storage.
--   CloudWatch log ingestion and storage.
--   Data transfer.
--   S3 state storage (expected to be small).
+- Application Load Balancer hourly and capacity charges.
+- Fargate vCPU and memory runtime.
+- Public IPv4 address charges.
+- ECR image storage.
+- CloudWatch log ingestion and storage.
+- Data transfer.
+- S3 state storage (expected to be small).
 
 Actual cost depends on AWS region, runtime duration, traffic, image
 size, and current AWS pricing. Do not quote a fixed monthly estimate
@@ -912,18 +944,18 @@ without checking the selected region and pricing model.
 
 ### 14.2 Cost controls
 
--   Avoid NAT Gateways for the assessment topology.
--   Avoid unnecessary VPC endpoints.
--   Start with one ECS task; use two for the final availability
-    demonstration only if budget permits.
--   Use a small, measured Fargate task size.
--   Set CloudWatch log retention to seven days.
--   Configure an ECR lifecycle policy to expire old untagged or
-    superseded images while retaining recent releases.
--   Create an AWS Budget alert.
--   Remove resources after the assessment if they are no longer
-    required.
--   Check for orphaned resources after Terraform destroy.
+- Avoid NAT Gateways for the assessment topology.
+- Avoid unnecessary VPC endpoints.
+- Start with one ECS task; use two for the final availability
+  demonstration only if budget permits.
+- Use a small, measured Fargate task size.
+- Set CloudWatch log retention to seven days.
+- Configure an ECR lifecycle policy to expire old untagged or
+  superseded images while retaining recent releases.
+- Create an AWS Budget alert.
+- Remove resources after the assessment if they are no longer
+  required.
+- Check for orphaned resources after Terraform destroy.
 
 AWS Budget alerts are notifications, not hard spending caps. They do not
 automatically stop resources or guarantee that spend cannot exceed the
@@ -931,120 +963,71 @@ configured threshold.
 
 ## 15. Failure scenarios and recovery
 
-  -----------------------------------------------------------------------
-  Failure                 Detection               Expected response /
-                                                  recovery
-  ----------------------- ----------------------- -----------------------
-  Unit test fails         GitHub Actions test     Stop workflow; do not
-                          step                    build or deploy
+| Failure                             | Detection                               | Expected response / recovery                                                                            |
+| ----------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Unit test fails                     | GitHub Actions test step                | Stop workflow; do not build or deploy                                                                   |
+| Docker build fails                  | Build step                              | Stop workflow; inspect build logs                                                                       |
+| Image scan finds unacceptable issue | Image scan step                         | Block release according to documented severity policy                                                   |
+| AWS OIDC assumption fails           | Authentication step                     | Stop deployment; inspect trust policy and repository subject                                            |
+| ECR push fails                      | Publish step                            | Stop deployment; inspect permissions, repository, and image tag                                         |
+| ECS task exits                      | ECS service events and task status      | ECS attempts replacement to maintain desired count                                                      |
+| Container health check fails        | ECS task health                         | Task may be replaced according to service behavior                                                      |
+| ALB health check fails              | Target group health                     | ALB stops routing to unhealthy target; deployment may fail to stabilize                                 |
+| New deployment does not stabilize   | ECS deployment state                    | Circuit breaker rollback where configured; inspect service events and logs                              |
+| Application returns HTTP 5xx        | ALB metrics and application logs        | Investigate application errors and dependency behavior                                                  |
+| One AZ becomes unavailable          | AWS service/AZ health and target health | A second healthy task in another AZ can continue serving; one-task configuration has reduced resilience |
+| CloudWatch log delivery fails       | Missing logs / task configuration       | Inspect execution role, log group, and task definition configuration                                    |
+| Terraform apply fails               | Terraform output and state              | Inspect error; resolve cause; check state consistency before retrying                                   |
+| Terraform state lock remains        | Backend lock                            | Confirm no active operation, then follow documented safe lock recovery; do not force-unlock blindly     |
 
-  Docker build fails      Build step              Stop workflow; inspect
-                                                  build logs
-
-  Image scan finds        Image scan step /       Block release according
-  unacceptable issue      policy                  to documented severity
-                                                  policy
-
-  AWS OIDC assumption     Authentication step     Stop deployment;
-  fails                                           inspect trust policy
-                                                  and repository subject
-
-  ECR push fails          Publish step            Stop deployment;
-                                                  inspect permissions,
-                                                  repository, and image
-                                                  tag
-
-  ECS task exits          ECS service events and  ECS attempts
-                          task status             replacement to maintain
-                                                  desired count
-
-  Container health check  ECS task health         Task may be replaced
-  fails                                           according to service
-                                                  behavior
-
-  ALB health check fails  Target group health     ALB stops routing to
-                                                  unhealthy target;
-                                                  deployment may fail to
-                                                  stabilize
-
-  New deployment does not ECS deployment state    Circuit breaker
-  stabilize                                       rollback where
-                                                  configured; inspect
-                                                  service events and logs
-
-  Application returns     ALB metrics and         Investigate application
-  HTTP 5xx                application logs        errors and dependency
-                                                  behavior
-
-  One AZ becomes          AWS service/AZ health   A second healthy task
-  unavailable             and target health       in another AZ can
-                                                  continue serving;
-                                                  one-task configuration
-                                                  has reduced resilience
-
-  CloudWatch log delivery Missing logs / task     Inspect execution role,
-  fails                   configuration           log group, and task
-                                                  definition
-                                                  configuration
-
-  Terraform apply fails   Terraform output and    Inspect error; resolve
-                          state                   cause; check state
-                                                  consistency before
-                                                  retrying
-
-  Terraform state lock    Backend lock            Confirm no active
-  remains                                         operation, then follow
-                                                  documented safe lock
-                                                  recovery; do not
-                                                  force-unlock blindly
-  -----------------------------------------------------------------------
+---
 
 ## 16. Validation and acceptance test plan
 
 ### 16.1 Application tests
 
--   Unit tests pass locally and in GitHub Actions.
--   `/health` returns HTTP 200.
--   `/` returns the expected application information.
--   `/api/status` returns valid JSON.
--   The server listens on `0.0.0.0:3000`.
+- Unit tests pass locally and in GitHub Actions.
+- `/health` returns HTTP 200.
+- `/` returns the expected application information.
+- `/api/status` returns valid JSON.
+- The server listens on `0.0.0.0:3000`.
 
 ### 16.2 Container tests
 
--   Docker image builds successfully.
--   Container starts locally.
--   Health endpoint responds from outside the container.
--   Container runs as a non-root user.
--   No local secrets or development files are included.
--   Image scan is executed and findings are reviewed.
+- Docker image builds successfully.
+- Container starts locally.
+- Health endpoint responds from outside the container.
+- Container runs as a non-root user.
+- No local secrets or development files are included.
+- Image scan is executed and findings are reviewed.
 
 ### 16.3 Infrastructure tests
 
--   Terraform formatting and validation pass.
--   Terraform plan contains only expected resources.
--   VPC has the intended two public subnets in distinct AZs.
--   ALB is attached to both public subnets.
--   ECS tasks use the intended task security group.
--   Task security group allows port 3000 only from the ALB security
-    group.
--   ECR repository and lifecycle configuration exist.
--   CloudWatch log group has the intended retention.
--   IAM trust and permissions are appropriately restricted.
+- Terraform formatting and validation pass.
+- Terraform plan contains only expected resources.
+- VPC has the intended two public subnets in distinct AZs.
+- ALB is attached to both public subnets.
+- ECS tasks use the intended task security group.
+- Task security group allows port 3000 only from the ALB security
+  group.
+- ECR repository and lifecycle configuration exist.
+- CloudWatch log group has the intended retention.
+- IAM trust and permissions are appropriately restricted.
 
 ### 16.4 Deployment tests
 
--   Pull request workflow does not deploy.
--   A successful merge to the deployment branch triggers the application
-    pipeline.
--   The image is pushed with the Git commit SHA tag.
--   ECS task definition references the new image.
--   ECS service reaches stability.
--   ALB target is healthy.
--   ALB DNS endpoint returns the expected health response.
--   Logs are visible in CloudWatch.
--   A deliberately failing test prevents deployment.
--   A failed deployment is detected and rollback behavior is documented
-    or demonstrated safely.
+- Pull request workflow does not deploy.
+- A successful merge to the deployment branch triggers the application
+  pipeline.
+- The image is pushed with the Git commit SHA tag.
+- ECS task definition references the new image.
+- ECS service reaches stability.
+- ALB target is healthy.
+- ALB DNS endpoint returns the expected health response.
+- Logs are visible in CloudWatch.
+- A deliberately failing test prevents deployment.
+- A failed deployment is detected and rollback behavior is documented
+  or demonstrated safely.
 
 ## 17. Architecture Decision Records
 
@@ -1139,50 +1122,54 @@ HTTPS listener, and HTTP-to-HTTPS redirect.
 The build should follow dependency order rather than creating resources
 opportunistically.
 
-  -----------------------------------------------------------------------
-  Phase                   Work                    Exit condition
-  ----------------------- ----------------------- -----------------------
-  1\. Application         Implement API, tests,   App and container work
-                          Dockerfile, local       locally
-                          health checks           
+---
 
-  2\. AWS foundation      Select region,          Correct account and
-                          configure access,       region verified
-                          create budget alert     
+Phase Work Exit condition
 
-  3\. Terraform bootstrap Create S3 state bucket  Remote state
-                          and configure backend   initializes
-                                                  successfully
+---
 
-  4\. Networking and      Create VPC, subnets,    Network and access
-  security                routes, security        model reviewed
-                          groups, IAM foundations 
+1\. Application Implement API, tests, App and container work
+Dockerfile, local locally
+health checks
 
-  5\. Registry and        Create ECR, ECS         ECS service can start a
-  compute                 cluster, task           task
-                          definition, service     
+2\. AWS foundation Select region, Correct account and
+configure access, region verified
+create budget alert
 
-  6\. Ingress             Create ALB, target      Health endpoint is
-                          group, listener         reachable through ALB
+3\. Terraform bootstrap Create S3 state bucket Remote state
+and configure backend initializes
+successfully
 
-  7\. Observability       Configure CloudWatch    Logs and selected
-                          logs and alarms         metrics visible
+4\. Networking and Create VPC, subnets, Network and access
+security routes, security model reviewed
+groups, IAM foundations
 
-  8\. CI/CD identity      Configure GitHub OIDC   Workflow can assume
-                          and deployment role     role with scoped
-                                                  permissions
+5\. Registry and Create ECR, ECS ECS service can start a
+compute cluster, task task
+definition, service
 
-  9\. CI/CD pipeline      Implement test, build,  Commit triggers
-                          scan, push, deploy,     repeatable deployment
-                          verify                  
+6\. Ingress Create ALB, target Health endpoint is
+group, listener reachable through ALB
 
-  10\. Validation         Run acceptance and      Evidence collected and
-                          failure tests           issues resolved
+7\. Observability Configure CloudWatch Logs and selected
+logs and alarms metrics visible
 
-  11\. Documentation      Finalize diagrams,      Repository is
-                          README, trade-offs,     reviewer-ready
-                          cleanup                 
-  -----------------------------------------------------------------------
+8\. CI/CD identity Configure GitHub OIDC Workflow can assume
+and deployment role role with scoped
+permissions
+
+9\. CI/CD pipeline Implement test, build, Commit triggers
+scan, push, deploy, repeatable deployment
+verify
+
+10\. Validation Run acceptance and Evidence collected and
+failure tests issues resolved
+
+11\. Documentation Finalize diagrams, Repository is
+README, trade-offs, reviewer-ready
+cleanup
+
+---
 
 ## 19. Cleanup and teardown
 
@@ -1213,18 +1200,18 @@ cleanup.
 The following values should be finalized before Terraform resources are
 written:
 
--   AWS region.
--   Project name and resource naming convention.
--   GitHub repository owner and repository name.
--   Deployment branch and GitHub Environment name.
--   VPC CIDR and subnet CIDRs.
--   ECS task CPU and memory after local measurement.
--   Initial ECS desired task count.
--   Exact Node.js LTS and base image versions.
--   Image scan tool and severity threshold.
--   CloudWatch alarm thresholds and notification destination, if any.
--   Terraform and AWS provider versions.
--   Whether the final assessment run will use one or two ECS tasks.
+- AWS region.
+- Project name and resource naming convention.
+- GitHub repository owner and repository name.
+- Deployment branch and GitHub Environment name.
+- VPC CIDR and subnet CIDRs.
+- ECS task CPU and memory after local measurement.
+- Initial ECS desired task count.
+- Exact Node.js LTS and base image versions.
+- Image scan tool and severity threshold.
+- CloudWatch alarm thresholds and notification destination, if any.
+- Terraform and AWS provider versions.
+- Whether the final assessment run will use one or two ECS tasks.
 
 Do not hardcode account IDs, credentials, or environment-specific
 secrets in source files.
@@ -1236,16 +1223,16 @@ lifecycle over architectural complexity.
 
 It demonstrates:
 
--   Infrastructure as Code with reusable Terraform modules.
--   Automated CI/CD with separate infrastructure and application
-    workflows.
--   Containerization and immutable image versioning.
--   AWS-managed container execution using ECS Fargate.
--   Controlled ingress through an ALB.
--   Identity federation using GitHub OIDC.
--   Centralized application logging and basic monitoring.
--   Explicit failure handling, cost controls, and documented production
-    improvements.
+- Infrastructure as Code with reusable Terraform modules.
+- Automated CI/CD with separate infrastructure and application
+  workflows.
+- Containerization and immutable image versioning.
+- AWS-managed container execution using ECS Fargate.
+- Controlled ingress through an ALB.
+- Identity federation using GitHub OIDC.
+- Centralized application logging and basic monitoring.
+- Explicit failure handling, cost controls, and documented production
+  improvements.
 
 The architecture is intentionally a **cost-conscious assessment
 environment with production-oriented practices**, not a claim that every
@@ -1259,6 +1246,6 @@ an AWS constraint, or a changed requirement justifies revisiting them.
 Any material change should be recorded in the decision register and
 reflected in the diagrams and README.
 
-------------------------------------------------------------------------
+---
 
 **End of architecture design document.**
