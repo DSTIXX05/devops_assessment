@@ -107,7 +107,7 @@ resource "aws_cloudwatch_metric_alarm" "unhealthy_hosts" {
 # free.
 resource "aws_cloudwatch_metric_alarm" "live_task_count" {
   alarm_name        = "${var.name_prefix}-live-task-count-low"
-  alarm_description = "ECS service has no live tasks. With desired count 1 this means the application is down."
+  alarm_description = "ECS service has fewer live tasks than desired (${var.desired_count})."
 
   namespace   = "AWS/ECS"
   metric_name = "LiveTaskCount"
@@ -115,7 +115,7 @@ resource "aws_cloudwatch_metric_alarm" "live_task_count" {
   period      = 60
 
   comparison_operator = "LessThanThreshold"
-  threshold           = 1
+  threshold           = var.desired_count
   evaluation_periods  = 2
 
   # Zero tasks is the failure being alarmed on, so absence of data is treated as

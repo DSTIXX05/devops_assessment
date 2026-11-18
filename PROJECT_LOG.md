@@ -12,8 +12,8 @@ bottom of each dated section.
 | Application        | Node.js 24.14.1 LTS, Express 5.3.0, ESM                                                                 |
 | Tests              | Node built-in test runner (`node --test`), no test framework dependency                                 |
 | Container          | Multi-stage Dockerfile, `node:24.14.1-alpine`, non-root UID 1000                                        |
-| Container health   | `node -e fetch(...)` in `HEALTHCHECK`, no curl/wget added                                              |
-| Compute            | Amazon ECS on AWS Fargate (desired count **1**)                                                         |
+| Container health   | `node -e fetch(...)` in `HEALTHCHECK`, no curl/wget added                                               |
+| Compute            | Amazon ECS on AWS Fargate (dev **1** task, prod **2** across AZs)                                       |
 | Registry           | Amazon ECR, SHA-tagged images, scan-on-push **informational**                                           |
 | Vulnerability gate | **Trivy in CI, blocking on HIGH and CRITICAL**                                                          |
 | Ingress            | ALB, HTTP:80 (no domain → no ACM/TLS), target port 3000                                                 |
@@ -21,7 +21,7 @@ bottom of each dated section.
 | Network            | Two-AZ VPC, public subnets, **no NAT Gateway**                                                          |
 | IaC                | Terraform **1.17.2** (operator and CI now aligned), region **us-east-1**, S3 backend + `use_lockfile`   |
 | Terraform provider | `hashicorp/aws` **6.73.0** (pinned in `.terraform.lock.hcl`)                                            |
-| Operator profile   | `AdminDelightsome` (IAM user + MFA) via `scripts/with-operator-creds.sh`, never root                   |
+| Operator profile   | `AdminDelightsome` (IAM user + MFA) via `scripts/with-operator-creds.sh`, never root                    |
 | Environments       | Separate `dev` and `prod` roots sharing reusable modules                                                |
 | Terraform apply    | **Local operator using an AWS admin CLI profile**                                                       |
 | CI/CD              | GitHub Actions (see ADR-003 justification below)                                                        |
@@ -160,7 +160,7 @@ function.
 | `GET /api/status`                   | 200, full status payload                                              |
 | `HEALTHCHECK`                       | `healthy`                                                             |
 | `docker stop` (SIGTERM)             | exit code **0**, logs show `shutdown initiated` → `shutdown complete` |
-| Runtime image contents              | `node_modules`, `package.json`, `src` only, no tests, no dev deps    |
+| Runtime image contents              | `node_modules`, `package.json`, `src` only, no tests, no dev deps     |
 | `npm audit`                         | 0 vulnerabilities                                                     |
 
 ### Key learnings
@@ -250,9 +250,9 @@ already at that floor.
 
 ### Cost of this phase
 
-| Item                                   | Cost                                                                                   |
-| -------------------------------------- | -------------------------------------------------------------------------------------- |
-| S3 state bucket (kilobytes, versioned) | fractions of a cent per month                                                          |
+| Item                                   | Cost                                                                                  |
+| -------------------------------------- | ------------------------------------------------------------------------------------- |
+| S3 state bucket (kilobytes, versioned) | fractions of a cent per month                                                         |
 | AWS Budgets                            | **$0**, first two budgets per account are free; email notifications need no SNS topic |
 
 **No AWS resources have been created.** `plan`/`apply` are intentionally withheld
@@ -325,7 +325,7 @@ apply that the CLI itself reported as an IAM user.
 | Lifecycle rules              | `abort-incomplete-uploads`, `expire-old-state-versions` |
 | Plain HTTP to bucket         | `403`                                                   |
 | Budget                       | `devops-assessment-monthly`, `COST`, 30 USD/month       |
-| Budget notifications         | none, `budget_notification_email` is unset             |
+| Budget notifications         | none, `budget_notification_email` is unset              |
 
 ### Key learnings
 
@@ -789,8 +789,8 @@ three `Resource:"*"` statements, all documented: `ecr:GetAuthorizationToken`,
 
 Both environments are live, deployed by the pipeline, and independently verified.
 
-| Environment | ALB                                                                 | Commit    | `/docs` | `/openapi.json`      |
-| ----------- | ------------------------------------------------------------------- | --------- | ------- | -------------------- |
+| Environment | ALB                                                                 | Commit    | `/docs` | `/openapi.json`     |
+| ----------- | ------------------------------------------------------------------- | --------- | ------- | ------------------- |
 | dev         | `devops-assessment-dev-alb-343497269.us-east-1.elb.amazonaws.com`   | `65317c0` | 200     | 200, 3.0.3, 4 paths |
 | prod        | `devops-assessment-prod-alb-1683875137.us-east-1.elb.amazonaws.com` | `65317c0` | 200     | 200, 3.0.3, 4 paths |
 
@@ -911,11 +911,11 @@ locking, and it is worth the trade to avoid a second billable resource.
 
 ### Finding 3: Terraform version drift between CI and the operator
 
-| Where                               | Version                    |
-| ----------------------------------- | -------------------------- |
-| snap binary (what actually ran)     | **1.17.2**                 |
-| `infrastructure/.terraform-version` | 1.17.1                     |
-| `infrastructure.yml` pin            | 1.17.1                     |
+| Where                               | Version                   |
+| ----------------------------------- | ------------------------- |
+| snap binary (what actually ran)     | **1.17.2**                |
+| `infrastructure/.terraform-version` | 1.17.1                    |
+| `infrastructure.yml` pin            | 1.17.1                    |
 | `required_version`                  | `~> 1.17.0`, permits both |
 
 Snap auto-refreshed 1.17.1 → 1.17.2 on 2026-11-15 at 20:47, and no tool read the
@@ -938,3 +938,31 @@ false` was correct precisely because it was inconvenient at exactly the moment
   someone wanted it to be convenient.
 - A cancelled process is not a stopped process. Killing a wrapper does not
   necessarily kill its child.
+
+---
+
+## 2026-11-18 — Multi-AZ prod: two tasks across two AZs
+
+### Change
+
+`prod` now runs two Fargate tasks spread across the two Availability Zones, giving it
+multi-AZ availability and a rolling, zero-downtime deploy. `dev` remains a single task.
+
+- `environments/prod/terraform.tfvars`: `desired_count = 2`
+- `modules/ecs`: added `ordered_placement_strategy { type = "spread"; field =
+"attribute:ecs.availability-zone" }` so two tasks also means one per AZ.
+- `modules/monitoring`: the `live-task-count-low` alarm threshold now tracks a new
+  `desired_count` module variable instead of a hardcoded 1. Prod alerts when it drops
+  below 2 (degraded); dev when below 1 (outage).
+
+### Cost
+
+Prod compute roughly doubles: ~$9 to ~$18/month (2 x 0.25 vCPU / 0.5 GB), plus a second
+task ENI public IPv4 charge. Both environments total ~$65/month while running.
+
+### Why the placement strategy matters
+
+`desired_count = 2` alone does not guarantee tasks land in different AZs. The `spread` on
+`attribute:ecs.availability-zone` is what enforces it. The ALB and target group needed no
+change: `target_type = "ip"` already registers every task IP, and the deployment
+percentages (100/200) give prod a rolling, zero-downtime deploy.

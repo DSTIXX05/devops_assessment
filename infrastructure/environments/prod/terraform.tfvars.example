@@ -11,6 +11,10 @@ environment = "prod"
 # peered without a CIDR redesign.
 vpc_cidr = "10.30.0.0/16"
 
+# Two tasks spread across the two Availability Zones (multi-AZ). dev stays at
+# the default of 1. The service's ordered_placement_strategy spreads them.
+desired_count = 2
+
 # Do not set aws_profile. Credentials come from
 # ../scripts/with-operator-creds.sh; see providers.tf.
 
